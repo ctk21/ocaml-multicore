@@ -213,6 +213,9 @@ bits  63        (64-P) (63-P)        10 9     8 7   0
 #define Is_young(val) \
   ((((uintnat)(val) ^ (uintnat)Caml_state) & Young_val_bitmask) == 0)
 
+#define Is_block_and_young(val) \
+  Is_young(val)
+
 /* Is_minor(val) is true iff val is a block in any domain's minor heap. */
 #define Is_minor(val) \
   ((((uintnat)(val) ^ (uintnat)Caml_state) & Minor_val_bitmask) == 0)
