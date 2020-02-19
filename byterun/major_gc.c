@@ -1109,7 +1109,9 @@ static intnat major_collection_slice(intnat howmuch,
         but bad things happen if the GC cycles ends via an STW
         interrupt here.
       */
+      caml_ev_begin("major_gc/sweep_inter");
       caml_handle_incoming_interrupts();
+      caml_ev_end("major_gc/sweep_inter");
       // FIXME: Is this sufficient to deal with the above case?
       if( saved_major_cycle != caml_major_cycles_completed ) {
         caml_ev_end("major_gc/sweep");
@@ -1139,7 +1141,9 @@ mark_again:
         but bad things happen if the GC cycles ends via an STW
         interrupt here.
       */
+      caml_ev_begin("major_gc/mark_inter");
       caml_handle_incoming_interrupts();
+      caml_ev_end("major_gc/mark_inter");
       if( saved_major_cycle != caml_major_cycles_completed ) {
         caml_ev_end("major_gc/mark");
         caml_ev_end("major_gc/slice");
