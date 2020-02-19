@@ -91,8 +91,8 @@ void caml_gc_log (char *msg, ...)
     char fmtbuf[512];
     sprintf(fmtbuf, "[%02d] %s\n", Caml_state ? Caml_state->id : -1, msg);
     vfprintf(stderr, fmtbuf, args);
-    fflush(stderr);
     va_end (args);
+    fflush(stderr);
   }
 }
 
