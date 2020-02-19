@@ -485,6 +485,8 @@ static void realloc_mark_stack (struct mark_stack* stk)
   mark_entry* new;
   uintnat mark_stack_bsize = stk->size * sizeof(mark_entry);
 
+  caml_ev_begin("major_gc/realloc_mark_stack");
+
   if ( mark_stack_bsize < caml_heap_size(Caml_state->shared_heap) / 32) {
     caml_gc_log ("Growing mark stack to %"ARCH_INTNAT_PRINTF_FORMAT"uk bytes\n",
                  (intnat) mark_stack_bsize * 2 / 1024);
@@ -504,6 +506,7 @@ static void realloc_mark_stack (struct mark_stack* stk)
                mark_stack_bsize,
                caml_heap_size(Caml_state->shared_heap));
   mark_stack_prune(stk);
+  caml_ev_end("major_gc/realloc_mark_stack");
 }
 
 static void mark_stack_push(struct mark_stack* stk, mark_entry e)
@@ -1346,6 +1349,7 @@ static void mark_stack_prune (struct mark_stack* stk)
   addrmap_iterator i;
   uintnat mark_stack_count = stk->count;
   mark_entry* mark_stack = stk->stack;
+  caml_ev_begin("major_gc/mark_stack_prune");
 
   /* space used by the computations below */
   uintnat table_max = mark_stack_count / 100;
@@ -1462,6 +1466,8 @@ static void mark_stack_prune (struct mark_stack* stk)
       }
       Caml_state->pools_to_rescan[Caml_state->pools_to_rescan_count++] = pools[i].pool;
     }
+
+  caml_ev_end("major_gc/mark_stack_prune");
 }
 
 int caml_init_major_gc(caml_domain_state* d) {
