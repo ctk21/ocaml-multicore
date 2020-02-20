@@ -138,11 +138,11 @@ static void write_barrier(value obj, int field, value old_val, value new_val)
 
     caml_darken(0, old_val, 0);
 
-    if (Is_block(new_val) && Is_young(new_val)) {
+    if (Is_block_and_young(new_val)) {
 
       /* If old_val is young, then `Op_val(obj)+field` is already in
        * major_ref. We can safely skip adding it again. */
-       if (Is_block(old_val) && Is_young(old_val))
+       if (Is_block_and_young(old_val))
          return;
 
       /* Add to remembered set */
@@ -154,7 +154,7 @@ static void write_barrier(value obj, int field, value old_val, value new_val)
       * If old_val is also young, and younger than obj, then it must be the
       * case that `Op_val(obj)+field` is already in minor_ref. We can safely
       * skip adding it again. */
-    if (Is_block(old_val) && Is_young(old_val) && old_val < obj)
+    if (Is_block_and_young(old_val) && old_val < obj)
       return;
 
     /* Add to remembered set */
