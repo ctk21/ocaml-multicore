@@ -597,8 +597,8 @@ static intnat do_some_marking(struct mark_stack* stk, intnat budget) {
         if (Tag_hd(hd) == Cont_tag) {
           mark_stack_push(stk, e);
           caml_darken_cont(v);
-	  e = (mark_entry){0};
-	} else {
+	        e = (mark_entry){0};
+	      } else {
 again:
           if (Tag_hd(hd) == Lazy_tag || Tag_hd(hd) == Forcing_tag) {
             if (!atomic_compare_exchange_strong(
@@ -609,6 +609,9 @@ again:
             }
           }
           else {
+            if (Whsize_hd(hd) > 1024) {
+                caml_gc_log("large object marked: %lu sz=%u", v, Whsize_hd(hd));
+            }
             atomic_store_explicit(
               Hp_atomic_val(v),
               With_status_hd(hd, global.MARKED),
@@ -689,6 +692,10 @@ void caml_darken(void* state, value v, value* ignored) {
          Hp_atomic_val(v),
          With_status_hd(hd, global.MARKED),
          memory_order_relaxed);
+
+      if (Whsize_hd(hd) > 1024) {
+        caml_gc_log("large object darkened: %lu sz=%u", v, Whsize_hd(hd));
+      }
       if (Tag_hd(hd) < No_scan_tag) {
         mark_entry e = {v, 0, Wosize_val(v)};
         mark_stack_push(Caml_state->mark_stack, e);

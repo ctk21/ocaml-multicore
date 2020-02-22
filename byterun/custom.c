@@ -57,6 +57,12 @@ CAMLexport value caml_alloc_custom(const struct custom_operations * ops,
     Custom_ops_val(result) = ops;
     /* !!caml_adjust_gc_speed(mem,max); */
     result = caml_check_urgent_gc(result);
+
+    header_t hd = Hd_val(result);
+    if (Whsize_hd(hd) > 1024) {
+      caml_gc_log("large custom allocated: %lu sz=%u", result, Whsize_hd(hd));
+   }
+
   }
   return result;
 }

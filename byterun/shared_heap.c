@@ -456,6 +456,7 @@ static intnat large_alloc_sweep(struct caml_heap_state* local) {
     local->owner->state->swept_words +=
       Whsize_hd(hd) + Wsize_bsize(LARGE_ALLOC_HEADER_SZ);
     local->stats.large_blocks--;
+    caml_gc_log("large_alloc_sweep: free %u",  Whsize_hd(hd) + Wsize_bsize(LARGE_ALLOC_HEADER_SZ));
     free(a);
   } else {
     a->next = local->swept_large;
