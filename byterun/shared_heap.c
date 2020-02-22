@@ -431,7 +431,7 @@ static intnat pool_sweep(struct caml_heap_state* local, pool** plist, sizeclass 
       all_free = 0;
     }
     p += wh;
-    work++;
+    work += wh;
   }
 
   if (all_free) {
@@ -462,7 +462,7 @@ static intnat large_alloc_sweep(struct caml_heap_state* local) {
     a->next = local->swept_large;
     local->swept_large = a;
   }
-  return 1; //Whsize_hd(hd);
+  return Whsize_hd(hd);
 }
 
 static void verify_swept(struct caml_heap_state*);

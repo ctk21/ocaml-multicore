@@ -337,7 +337,7 @@ static uintnat default_slice_budget() {
   */
   uintnat heap_size = caml_heap_size(Caml_state->shared_heap);
   heap_words = (double)Wsize_bsize(heap_size);
-  uintnat heap_blocks = caml_heap_blocks(Caml_state->shared_heap);
+  uintnat heap_blocks = heap_size; // caml_heap_blocks(Caml_state->shared_heap);
 
   uintnat saved_terminated_words = terminated_domains_allocated_words;
   if( saved_terminated_words > 0 ) {
