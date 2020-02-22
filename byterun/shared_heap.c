@@ -456,13 +456,13 @@ static intnat large_alloc_sweep(struct caml_heap_state* local) {
     local->owner->state->swept_words +=
       Whsize_hd(hd) + Wsize_bsize(LARGE_ALLOC_HEADER_SZ);
     local->stats.large_blocks--;
-    caml_gc_log("large_alloc_sweep: free %u",  Whsize_hd(hd) + Wsize_bsize(LARGE_ALLOC_HEADER_SZ));
+    caml_gc_log("large_alloc_sweep: free %lu sz=%u", a, Whsize_hd(hd) + Wsize_bsize(LARGE_ALLOC_HEADER_SZ));
     free(a);
   } else {
     a->next = local->swept_large;
     local->swept_large = a;
   }
-  return Whsize_hd(hd);
+  return 1; //Whsize_hd(hd);
 }
 
 static void verify_swept(struct caml_heap_state*);
@@ -719,8 +719,8 @@ static void verify_swept (struct caml_heap_state* local) {
 
   verify_large(local->swept_large, &large_stats);
   Assert(local->unswept_large == 0);
-  caml_gc_log("Large memory: %lu alloced, %lu free, %lu fragmentation",
-              large_stats.alloced, large_stats.free, large_stats.overhead);
+  caml_gc_log("Large memory: %lu alloced, %lu live, %lu overhead",
+              large_stats.alloced, large_stats.live_blocks, large_stats.overhead);
 
   /* Check stats are being computed correctly */
   Assert(local->stats.pool_words == pool_stats.alloced);
