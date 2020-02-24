@@ -406,43 +406,41 @@ static intnat pool_sweep(struct caml_heap_state* local, pool** plist, sizeclass 
   value* p = (value*)((char*)a + POOL_HEADER_SZ);
   value* end = (value*)a + POOL_WSIZE;
   mlsize_t wh = wsize_sizeclass[sz];
-  int all_free = 1, all_used = 1;
+  int all_free = 1;
   struct heap_stats* s = &local->stats;
 
   while (p + wh <= end) {
     header_t hd = (header_t)*p;
-    if (hd == 0) {
-      /* already on freelist */
-      all_used = 0;
-    } else if (Has_status_hd(hd, global.GARBAGE)) {
-      Assert(Whsize_hd(hd) <= wh);
-      if (Tag_hd (hd) == Custom_tag) {
-        void (*final_fun)(value) = Custom_ops_val(Val_hp(p))->finalize;
-        if (final_fun != NULL) final_fun(Val_hp(p));
+    if (hd != 0) {
+      if (Has_status_hd(hd, global.GARBAGE)) {
+        Assert(Whsize_hd(hd) <= wh);
+        if (Tag_hd (hd) == Custom_tag) {
+          void (*final_fun)(value) = Custom_ops_val(Val_hp(p))->finalize;
+          if (final_fun != NULL) final_fun(Val_hp(p));
+        }
+        /* add to freelist */
+        p[0] = 0;
+        p[1] = (value)a->next_obj;
+        Assert(Is_block((value)p));
+        a->next_obj = p;
+        /* update stats */
+        s->pool_live_blocks--;
+        s->pool_live_words -= Whsize_hd(hd);
+        local->owner->state->swept_words += Whsize_hd(hd);
+        s->pool_frag_words -= (wh - Whsize_hd(hd));
+      } else {
+        /* still live */
+        all_free = 0;
       }
-      /* add to freelist */
-      p[0] = 0;
-      p[1] = (value)a->next_obj;
-      Assert(Is_block((value)p));
-      a->next_obj = p;
-      all_used = 0;
-      /* update stats */
-      s->pool_live_blocks--;
-      s->pool_live_words -= Whsize_hd(hd);
-      local->owner->state->swept_words += Whsize_hd(hd);
-      s->pool_frag_words -= (wh - Whsize_hd(hd));
-    } else {
-      /* still live */
-      all_free = 0;
     }
     p += wh;
-    work += wh;
   }
+  work = POOL_WSIZE - POOL_HEADER_SZ;
 
   if (all_free) {
     pool_release(local, a, sz);
   } else {
-    pool** list = all_used ? &local->full_pools[sz] : &local->avail_pools[sz];
+    pool** list = a->next_obj ? &local->avail_pools[sz] : &local->full_pools[sz];
     a->next = *list;
     *list = a;
   }
