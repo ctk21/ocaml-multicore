@@ -168,7 +168,8 @@ int caml_reallocate_minor_heap(asize_t wsize)
 
   domain_state->young_start = (char*)domain_self->minor_heap_area;
   domain_state->young_end = (char*)(domain_self->minor_heap_area + Bsize_wsize(wsize) / 2);
-  domain_state->young_limit = (uintnat) domain_state->young_start;
+  domain_state->young_limit = (char*)(domain_self->minor_heap_area + Bsize_wsize(wsize) / 4);
+  domain_state->young_limit_current = domain_state->young_limit;
   domain_state->young_ptr = domain_state->young_end;
   return 0;
 }
@@ -205,7 +206,7 @@ static void create_domain(uintnat initial_minor_heap_wsize) {
           (caml_domain_state*)(d->tls_area);
         atomic_uintnat* young_limit = (atomic_uintnat*)&domain_state->young_limit;
         d->interrupt_word_address = young_limit;
-        atomic_store_rel(young_limit, (uintnat)domain_state->young_start);
+        atomic_store_rel(young_limit, (uintnat)domain_state->young_limit_current);
         s->interrupt_word = young_limit;
       }
       Assert(s->qhead == NULL);
@@ -755,15 +756,16 @@ void caml_urge_major_slice (void)
 }
 
 void caml_handle_gc_interrupt() {
-  atomic_uintnat* young_limit = domain_self->interrupt_word_address;
+  atomic_uintnat* young_limit_ptr = domain_self->interrupt_word_address;
   CAMLalloc_point_here;
 
-  if (atomic_load_acq(young_limit) == INTERRUPT_MAGIC) {
+  if (atomic_load_acq(young_limit_ptr) == INTERRUPT_MAGIC) {
     /* interrupt */
     caml_ev_begin("handle_interrupt");
-    while (atomic_load_acq(young_limit) == INTERRUPT_MAGIC) {
+    while (atomic_load_acq(young_limit_ptr) == INTERRUPT_MAGIC) {
       uintnat i = INTERRUPT_MAGIC;
-      atomic_compare_exchange_strong(young_limit, &i, (uintnat)Caml_state->young_start);
+
+      atomic_compare_exchange_strong(young_limit_ptr, &i, (uintnat)Caml_state->young_limit_current);
     }
     caml_ev_pause(EV_PAUSE_YIELD);
     caml_handle_incoming_interrupts();
@@ -772,13 +774,19 @@ void caml_handle_gc_interrupt() {
   }
 
   if (((uintnat)Caml_state->young_ptr - Bhsize_wosize(Max_young_wosize) <
-       (uintnat)Caml_state->young_start) ||
-      Caml_state->force_major_slice) {
+       (uintnat)Caml_state->young_start)) {
     caml_ev_begin("dispatch");
-    /* out of minor heap or collection forced */
-    Caml_state->force_major_slice = 0;
+    /* out of minor heap */
     caml_minor_collection();
     caml_ev_end("dispatch");
+  } else if ((uintnat)Caml_state->young_ptr - Bhsize_wosize(Max_young_wosize) < (uintnat)Caml_state->young_limit || Caml_state->force_major_slice) {
+    if( !Caml_state->force_major_slice ) {
+      Caml_state->young_limit = Caml_state->young_start;
+      Caml_state->young_limit_current = Caml_state->young_limit;
+    }
+    Caml_state->force_major_slice = 0;
+    caml_handle_incoming_interrupts();
+    caml_opportunistic_major_collection_slice(0,0);
   }
 }
 

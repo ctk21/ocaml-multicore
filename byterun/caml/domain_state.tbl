@@ -1,7 +1,10 @@
 DOMAIN_STATE(volatile uintnat, young_limit)
-/* Minor heap limit. Typically young_limit == young_end, but this field is set
- * by other domains to signal this domain by causing a spurious allocation
- * failure. */
+DOMAIN_STATE(uintnat, young_limit_current)
+/* Minor heap limit. young_limit is often set to half the available minor heap
+ * but can be used by other domains to signal this domain by causing a spurious 
+ * allocation failure. young_limit_current stores which half of the current 
+ * minor heap (there are two because of double buffering, so it's really which
+ * quarter) is in use. */
 
 DOMAIN_STATE(char*, young_ptr)
 /* Minor heap pointer */
