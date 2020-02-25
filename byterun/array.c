@@ -306,8 +306,11 @@ CAMLprim value caml_make_vect(value len, value init)
     else {
       /* make sure init is not young, to avoid creating
        very many ref table entries */
-      if (Is_block(init) && Is_minor(init))
-        caml_minor_collection();
+      if (Is_block(init) && Is_minor(init)) {
+        if ( size >= (Caml_state->minor_heap_wsz/2) ) {
+          caml_minor_collection();
+        }
+      }
       /* TODO: Spacetime */
       res = caml_alloc(size, 0);
       for (i = 0; i < size; i++) caml_initialize_field(res, i, init);
