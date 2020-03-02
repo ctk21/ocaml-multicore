@@ -153,14 +153,14 @@ CAMLexport void caml_modify_field (value obj, intnat field, value val)
   Assert (Is_block(obj));
   Assert(field >= 0 && field < Wosize_val(obj));
 
-  write_barrier(obj, field, Op_val(obj)[field], val);
+  value *v = &Op_val(obj)[field];
+  write_barrier((value)v, 0, *v, val);
 #if defined(COLLECT_STATS) && defined(NATIVE_CODE)
   Caml_state->mutable_stores++;
 #endif
   /* See Note [MM] above */
   atomic_thread_fence(memory_order_acquire);
-  atomic_store_explicit(&Op_atomic_val(obj)[field], val,
-                        memory_order_release);
+  atomic_store_explicit(Op_atomic_val(v), val, memory_order_release);
 }
 
 /* Compatability with old C-API
@@ -175,8 +175,7 @@ CAMLexport CAMLweakdef void caml_modify (value *fp, value val)
 
   /* See Note [MM] above */
   atomic_thread_fence(memory_order_acquire);
-  atomic_store_explicit(Op_atomic_val(*fp), val,
-                        memory_order_release);
+  atomic_store_explicit(Op_atomic_val(fp), val, memory_order_release);
 }
 
 CAMLexport void caml_initialize_field (value obj, intnat field, value val)
