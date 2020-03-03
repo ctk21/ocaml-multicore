@@ -514,11 +514,6 @@ void caml_empty_minor_heap_domain_clear (struct domain* domain, void* unused)
   clear_table ((struct generic_table *)&minor_tables->major_ref);
   clear_table ((struct generic_table *)&minor_tables->ephe_ref);
   clear_table ((struct generic_table *)&minor_tables->custom);
-
-  asize_t wsize = domain_state->minor_heap_wsz;
-
-  domain_state->young_limit = domain_state->young_start;
-  domain_state->young_ptr = domain_state->young_end;
 }
 
 void caml_empty_minor_heap_promote (struct domain* domain, int participating_count, struct domain** participating, int not_alone)
@@ -662,6 +657,9 @@ void caml_empty_minor_heap_promote (struct domain* domain, int participating_cou
   caml_ev_end("minor_gc/local_roots/promote");
   caml_ev_end("minor_gc/local_roots");
 
+  domain_state->young_limit = domain_state->young_start;
+  domain_state->young_ptr = domain_state->young_end;
+
   if( not_alone ) {
     atomic_fetch_add_explicit(&domains_finished_minor_gc, 1, memory_order_release);
   }
@@ -721,7 +719,9 @@ static void caml_stw_empty_minor_heap (struct domain* domain, void* unused, int 
   caml_gc_log("running stw empty_minor_heap_domain_clear");
   caml_empty_minor_heap_domain_clear(domain, 0);
   caml_ev_end("minor_gc/clear");
+
   caml_gc_log("finished stw empty_minor_heap");
+
 }
 
 /* must be called within a STW section  */
