@@ -513,9 +513,6 @@ void caml_empty_minor_heap_domain_clear (struct domain* domain, void* unused)
 
     domain_state->young_phase = 0;
   }
-
-  domain_state->young_limit = domain_state->young_start;
-  domain_state->young_ptr = domain_state->young_end;
 }
 
 void caml_empty_minor_heap_promote (struct domain* domain, int participating_count, struct domain** participating, int not_alone)
@@ -531,6 +528,8 @@ void caml_empty_minor_heap_promote (struct domain* domain, int participating_cou
   struct oldify_state st = {0};
   value **r;
   intnat c, curr_idx;
+
+  uintnat limit_at_start = domain_state->young_limit;
 
   st.promote_domain = domain;
 
@@ -599,6 +598,8 @@ void caml_empty_minor_heap_promote (struct domain* domain, int participating_cou
     }
   }
 
+  atomic_store_rel((atomic_uintnat*)&domain_state->young_limit, (uintnat)domain_state->young_start);
+
   #ifdef DEBUG
     caml_global_barrier();
     // At this point all domains should have gone through all remembered set entries
@@ -662,7 +663,7 @@ void caml_empty_minor_heap_promote (struct domain* domain, int participating_cou
   /* we reset these pointers before allowing any mutators to be
      released to avoid races where another domain signals an interrupt
      and we clobber it */
-  atomic_store_rel((atomic_uintnat*)&domain_state->young_limit, (uintnat)domain_state->young_start);
+
   atomic_store_rel((atomic_uintnat*)&domain_state->young_ptr, (uintnat)domain_state->young_end);
 
   if( not_alone ) {
