@@ -602,8 +602,7 @@ again:
           }
           if (Tag_hd(hd) < No_scan_tag) {
             mark_entry child = {v, 0, Wosize_hd(hd)};
-            mark_stack_push(stk, e);
-            e = child;
+            mark_stack_push(stk, child);
           }
         }
       }
