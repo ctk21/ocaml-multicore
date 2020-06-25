@@ -191,7 +191,7 @@ header_t caml_get_header_val(value v) {
   return get_header_val(v);
 }
 
-static int try_update_object_header(value v, value *p, value result, mlsize_t infix_offset) {
+static inline int try_update_object_header(value v, value *p, value result, mlsize_t infix_offset) {
   int success = 0;
 
   if( caml_domain_alone() ) {
