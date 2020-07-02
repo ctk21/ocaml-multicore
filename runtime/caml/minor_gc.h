@@ -53,6 +53,11 @@ struct caml_minor_tables {
 
 struct domain;
 
+#define PROMOTED_DOMAIN(hd) ((hd) >> 10)
+#define ALREADY_PROMOTED(hd) ((((hd) >> 8) & 3) == 3)
+#define PROMOTE_IN_PROGRESS(hd) ((((hd) >> 8) & 3) == 1)
+#define UNPROMOTED(hd) ((((hd) >> 8) & 3) == 0)
+
 extern void caml_set_minor_heap_size (asize_t); /* size in bytes */
 extern void caml_empty_minor_heap_no_major_slice_from_stw (struct domain* domain, void* unused, int participating_count, struct domain** participating); /* in STW */
 extern int caml_try_stw_empty_minor_heap_on_all_domains(); /* out STW */

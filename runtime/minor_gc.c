@@ -139,6 +139,7 @@ void caml_set_minor_heap_size (asize_t wsize)
 struct oldify_state {
   value todo_list;
   uintnat live_bytes;
+  uintnat collisions;
   struct domain* promote_domain;
 };
 
@@ -169,22 +170,22 @@ static inline void log_gc_value(const char* prefix, value v)
 /* in progress updates are zeros except for the lowest color bit set to 1
    that is a header with: wosize == 0 && color == 1 && tag == 0 */
 #define In_progress_update_val ((header_t)0x100)
-#define Is_update_in_progress(hd) ((hd) == In_progress_update_val)
+#define Is_update_in_progress(hd) PROMOTE_IN_PROGRESS(hd)
 
 /* TODO: Probably a better spinlock needed here though doesn't happen often */
 static void spin_on_header(value v) {
-  while (atomic_load(Hp_atomic_val(v)) != 0) {
+  while (PROMOTE_IN_PROGRESS(atomic_load(Hp_atomic_val(v)))) {
     cpu_relax();
   }
 }
 
 static inline header_t get_header_val(value v) {
   header_t hd = atomic_load_explicit(Hp_atomic_val(v), memory_order_relaxed);
-  if (!Is_update_in_progress(hd))
+  if (UNPROMOTED(hd) || ALREADY_PROMOTED(hd))
     return hd;
 
   spin_on_header(v);
-  return 0;
+  return atomic_load_explicit(Hp_atomic_val(v), memory_order_acquire);
 }
 
 header_t caml_get_header_val(value v) {
@@ -195,16 +196,16 @@ static int try_update_object_header(value v, value *p, value result, mlsize_t in
   int success = 0;
 
   if( caml_domain_alone() ) {
-    *Hp_val (v) = 0;
+    *Hp_val (v) = (Caml_state->id << 10) | 3 << 8;
     Op_val(v)[0] = result;
     success = 1;
   } else {
     header_t hd = atomic_load(Hp_atomic_val(v));
-    if( hd == 0 ) {
+    if( ALREADY_PROMOTED(hd) ) {
       // in this case this has been updated by another domain, throw away result
       // and return the one in the object
       result = Op_val(v)[0];
-    } else if( Is_update_in_progress(hd) ) {
+    } else if( PROMOTE_IN_PROGRESS(hd) ) {
       // here we've caught a domain in the process of moving a minor heap object
       // we need to wait for it to finish
       spin_on_header(v);
@@ -212,13 +213,13 @@ static int try_update_object_header(value v, value *p, value result, mlsize_t in
       result = Op_val(v)[0];
     } else {
       // Here the header is neither zero nor an in-progress update
-      header_t desired_hd = In_progress_update_val;
+      header_t desired_hd = (Caml_state->id << 10) | 1 << 8;
       if( atomic_compare_exchange_strong(Hp_atomic_val(v), &hd, desired_hd) ) {
         // Success
         // Now we can write the forwarding pointer
         atomic_store_explicit(Op_atomic_val(v), result, memory_order_relaxed);
         // And update header ('release' to ensure after update of fwd pointer)
-        atomic_store_explicit(Hp_atomic_val(v), 0, memory_order_release);
+        atomic_store_explicit(Hp_atomic_val(v), (Caml_state->id << 10) | 3 << 8, memory_order_release);
         // Let the caller know we were responsible for the update
         success = 1;
       } else {
@@ -267,7 +268,7 @@ static void oldify_one (void* st_v, value v, value *p)
   infix_offset = 0;
   do {
     hd = get_header_val(v);
-    if (hd == 0) {
+    if (ALREADY_PROMOTED(hd)) {
       /* already forwarded, another domain is likely working on this. */
       *p = Op_val(v)[0] + infix_offset;
       return;
@@ -357,7 +358,7 @@ static void oldify_one (void* st_v, value v, value *p)
     tag_t ft = 0;
 
     if (Is_block (f)) {
-      ft = Tag_val (get_header_val(f) == 0 ? Op_val (f)[0] : f);
+      ft = Tag_val (ALREADY_PROMOTED(get_header_val(f)) ? Op_val (f)[0] : f);
     }
 
     if (ft == Forward_tag || ft == Lazy_tag || ft == Double_tag) {
@@ -382,32 +383,6 @@ static void oldify_one (void* st_v, value v, value *p)
   }
 }
 
-#if 0
-/* Test if the ephemeron is alive */
-/* Care needed with this test. It will only make sense if
-   all minor heaps have been promoted
-   as the liveness of the keys can only be known at that point */
-static inline int ephe_check_alive_data (struct caml_ephe_ref_elt *re)
-{
-  mlsize_t i;
-  value child;
-
-  for (i = CAML_EPHE_FIRST_KEY; i < Wosize_val(re->ephe); i++) {
-    child = Op_val(re->ephe)[i];
-    if (child != caml_ephe_none
-        && Is_block (child) && Is_minor(child)) {
-      resolve_infix_val(&child);
-      if (get_header_val(child) != 0) {
-        /* value not copied to major heap */
-        return 0;
-      }
-    }
-  }
-
-  return 1;
-}
-#endif
-
 /* Finish the work that was put off by [oldify_one].
    Note that [oldify_one] itself is called by oldify_mopup, so we
    have to be careful to remove the first entry from the list before
@@ -427,7 +402,7 @@ static void oldify_mopup (struct oldify_state* st, int do_ephemerons)
     /* I'm not convinced we can ever have something in todo_list that was updated
     by another domain, so this assert using get_header_val is probably not
     neccessary */
-    CAMLassert (get_header_val(v) == 0);       /* It must be forwarded. */
+    CAMLassert (ALREADY_PROMOTED(get_header_val(v)));       /* It must be forwarded. */
     new_v = Op_val (v)[0];                /* Follow forward pointer. */
     st->todo_list = Op_val (new_v)[1]; /* Remove from list. */
 
@@ -461,7 +436,7 @@ static void oldify_mopup (struct oldify_state* st, int do_ephemerons)
               :  &Op_val(re->ephe)[re->offset];
       if (*data != caml_ephe_none && Is_block(*data) && Is_minor(*data) ) {
         resolve_infix_val(data);
-        if (get_header_val(*data) == 0) { /* Value copied to major heap */
+        if (ALREADY_PROMOTED(get_header_val(*data))) { /* Value copied to major heap */
           *data = Op_val(*data)[0];
         } else {
           oldify_one(st, *data, data);
@@ -616,7 +591,7 @@ void caml_empty_minor_heap_promote (struct domain* domain, int participating_cou
   for (elt = self_minor_tables->custom.base; elt < self_minor_tables->custom.ptr; elt++) {
     value *v = &elt->block;
     if (Is_block(*v) && Is_minor(*v)) {
-      if (get_header_val(*v) == 0) { /* value copied to major heap */
+      if (ALREADY_PROMOTED(get_header_val(*v))) { /* value copied to major heap */
         *v = Op_val(*v)[0];
       } else {
         oldify_one(&st, *v, v);
@@ -644,12 +619,12 @@ void caml_empty_minor_heap_promote (struct domain* domain, int participating_cou
   for (r = self_minor_tables->major_ref.base;
        r < self_minor_tables->major_ref.ptr; r++) {
     value vnew = **r;
-    CAMLassert (!Is_block(vnew) || (get_header_val(vnew) != 0 && !Is_minor(vnew)));
+    CAMLassert (!Is_block(vnew) || !Is_minor(vnew));
   }
 
   for (elt = self_minor_tables->custom.base; elt < self_minor_tables->custom.ptr; elt++) {
     value vnew = elt->block;
-    CAMLassert (!Is_block(vnew) || (get_header_val(vnew) != 0 && !Is_minor(vnew)));
+    CAMLassert (!Is_block(vnew) || !Is_minor(vnew));
   }
 #endif
 
