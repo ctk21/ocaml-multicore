@@ -499,6 +499,23 @@ void caml_empty_minor_heap_domain_clear (struct domain* domain, void* unused)
   clear_table ((struct generic_table *)&minor_tables->major_ref);
   clear_table ((struct generic_table *)&minor_tables->ephe_ref);
   clear_table ((struct generic_table *)&minor_tables->custom);
+
+  asize_t wsize = domain_state->minor_heap_wsz;
+
+  if( domain_state->young_phase == 0 ) {
+    domain_state->young_start = (char*)domain_state->young_end;
+    domain_state->young_end = (char*)(domain_state->young_start + Bsize_wsize(wsize) );
+
+    domain_state->young_phase = 1;
+  } else {
+    domain_state->young_end = (char*)(domain_state->young_end - Bsize_wsize(wsize) );
+    domain_state->young_start = (char*)(domain_state->young_end - Bsize_wsize(wsize) );
+
+    domain_state->young_phase = 0;
+  }
+
+  domain_state->young_limit = domain_state->young_start;
+  domain_state->young_ptr = domain_state->young_end;
 }
 
 void caml_empty_minor_heap_promote (struct domain* domain, int participating_count, struct domain** participating, int not_alone)
