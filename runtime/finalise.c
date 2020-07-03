@@ -228,7 +228,7 @@ static void generic_final_minor_update (struct domain* d, struct finalisable * f
   CAMLassert (final->old <= final->young);
   for (i = final->old; i < final->young; i++){
     CAMLassert (Is_block (final->table[i].val));
-    if (Is_minor(final->table[i].val) && UNPROMOTED(caml_get_header_val(final->table[i].val))){
+    if (Is_minor(final->table[i].val) && IS_UNPROMOTED(caml_get_header_val(final->table[i].val))){
       ++ todo_count;
     }
   }
@@ -248,7 +248,7 @@ static void generic_final_minor_update (struct domain* d, struct finalisable * f
     for (i = final->old; i < final->young; i++) {
       CAMLassert (Is_block (final->table[i].val));
       CAMLassert (Tag_val (final->table[i].val) != Forward_tag);
-      if (Is_minor(final->table[j].val) && UNPROMOTED(caml_get_header_val(final->table[i].val))) {
+      if (Is_minor(final->table[j].val) && IS_UNPROMOTED(caml_get_header_val(final->table[i].val))) {
         /** dead */
         fi->todo_tail->item[k] = final->table[i];
         /* The finalisation function is called with unit not with the value */
@@ -270,7 +270,7 @@ static void generic_final_minor_update (struct domain* d, struct finalisable * f
   for (i = final->old; i < final->young; i++) {
     CAMLassert (Is_block (final->table[i].val));
     if (Is_minor(final->table[i].val)) {
-      CAMLassert (ALREADY_PROMOTED(caml_get_header_val(final->table[i].val)));
+      CAMLassert (IS_ALREADY_PROMOTED(caml_get_header_val(final->table[i].val)));
       final->table[i].val = Op_val(final->table[i].val)[0];
     }
   }

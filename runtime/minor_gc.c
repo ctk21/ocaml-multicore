@@ -174,14 +174,14 @@ static inline void log_gc_value(const char* prefix, value v)
 
 /* TODO: Probably a better spinlock needed here though doesn't happen often */
 static void spin_on_header(value v) {
-  while (PROMOTE_IN_PROGRESS(atomic_load(Hp_atomic_val(v)))) {
+  while (IS_PROMOTE_IN_PROGRESS(atomic_load(Hp_atomic_val(v)))) {
     cpu_relax();
   }
 }
 
 static inline header_t get_header_val(value v) {
   header_t hd = atomic_load_explicit(Hp_atomic_val(v), memory_order_relaxed);
-  if (UNPROMOTED(hd) || ALREADY_PROMOTED(hd))
+  if (IS_UNPROMOTED(hd) || IS_ALREADY_PROMOTED(hd))
     return hd;
 
   spin_on_header(v);
@@ -196,16 +196,16 @@ static int try_update_object_header(value v, value *p, value result, mlsize_t in
   int success = 0;
 
   if( caml_domain_alone() ) {
-    *Hp_val (v) = (Caml_state->id << 10) | 3 << 8;
+    *Hp_val (v) = ALREADY_PROMOTED_VAL;
     Op_val(v)[0] = result;
     success = 1;
   } else {
     header_t hd = atomic_load(Hp_atomic_val(v));
-    if( ALREADY_PROMOTED(hd) ) {
+    if( IS_ALREADY_PROMOTED(hd) ) {
       // in this case this has been updated by another domain, throw away result
       // and return the one in the object
       result = Op_val(v)[0];
-    } else if( PROMOTE_IN_PROGRESS(hd) ) {
+    } else if( IS_PROMOTE_IN_PROGRESS(hd) ) {
       // here we've caught a domain in the process of moving a minor heap object
       // we need to wait for it to finish
       spin_on_header(v);
@@ -213,13 +213,13 @@ static int try_update_object_header(value v, value *p, value result, mlsize_t in
       result = Op_val(v)[0];
     } else {
       // Here the header is neither zero nor an in-progress update
-      header_t desired_hd = (Caml_state->id << 10) | 1 << 8;
+      header_t desired_hd = PROMOTE_IN_PROGRESS_VAL;
       if( atomic_compare_exchange_strong(Hp_atomic_val(v), &hd, desired_hd) ) {
         // Success
         // Now we can write the forwarding pointer
         atomic_store_explicit(Op_atomic_val(v), result, memory_order_relaxed);
         // And update header ('release' to ensure after update of fwd pointer)
-        atomic_store_explicit(Hp_atomic_val(v), (Caml_state->id << 10) | 3 << 8, memory_order_release);
+        atomic_store_explicit(Hp_atomic_val(v), ALREADY_PROMOTED_VAL, memory_order_release);
         // Let the caller know we were responsible for the update
         success = 1;
       } else {
@@ -268,8 +268,9 @@ static void oldify_one (void* st_v, value v, value *p)
   infix_offset = 0;
   do {
     hd = get_header_val(v);
-    if (ALREADY_PROMOTED(hd)) {
+    if (IS_ALREADY_PROMOTED(hd)) {
       /* already forwarded, another domain is likely working on this. */
+      st->collisions += (PROMOTING_DOMAIN(hd) != Caml_state->id);
       *p = Op_val(v)[0] + infix_offset;
       return;
     }
@@ -296,6 +297,7 @@ static void oldify_one (void* st_v, value v, value *p)
     }
     else
     {
+      st->collisions += (PROMOTING_DOMAIN(hd) != Caml_state->id);
       // Conflict - fix up what we allocated on the major heap
       *Hp_val(result) = Make_header(1, No_scan_tag, global.MARKED);
       #ifdef DEBUG
@@ -320,6 +322,7 @@ static void oldify_one (void* st_v, value v, value *p)
         goto tail_call;
       }
     } else {
+      st->collisions += (PROMOTING_DOMAIN(hd) != Caml_state->id);
       // Conflict - fix up what we allocated on the major heap
       *Hp_val(result) = Make_header(sz, No_scan_tag, global.MARKED);
       #ifdef DEBUG
@@ -342,6 +345,7 @@ static void oldify_one (void* st_v, value v, value *p)
     }
     CAMLassert (infix_offset == 0);
     if( !try_update_object_header(v, p, result, 0) ) {
+      st->collisions += (PROMOTING_DOMAIN(hd) != Caml_state->id);
       // Conflict
       *Hp_val(result) = Make_header(sz, No_scan_tag, global.MARKED);
       #ifdef DEBUG
@@ -358,7 +362,7 @@ static void oldify_one (void* st_v, value v, value *p)
     tag_t ft = 0;
 
     if (Is_block (f)) {
-      ft = Tag_val (ALREADY_PROMOTED(get_header_val(f)) ? Op_val (f)[0] : f);
+      ft = Tag_val (IS_ALREADY_PROMOTED(get_header_val(f)) ? Op_val (f)[0] : f);
     }
 
     if (ft == Forward_tag || ft == Lazy_tag || ft == Double_tag) {
@@ -371,6 +375,8 @@ static void oldify_one (void* st_v, value v, value *p)
         v = f;
         goto tail_call;
       } else {
+        st->collisions += (PROMOTING_DOMAIN(hd) != Caml_state->id);
+
         *Hp_val(result) = Make_header(1, No_scan_tag, global.MARKED);
         #ifdef DEBUG
         Op_val(result)[0] = Val_long(1);
@@ -402,7 +408,7 @@ static void oldify_mopup (struct oldify_state* st, int do_ephemerons)
     /* I'm not convinced we can ever have something in todo_list that was updated
     by another domain, so this assert using get_header_val is probably not
     neccessary */
-    CAMLassert (ALREADY_PROMOTED(get_header_val(v)));       /* It must be forwarded. */
+    CAMLassert (IS_ALREADY_PROMOTED(get_header_val(v)));       /* It must be forwarded. */
     new_v = Op_val (v)[0];                /* Follow forward pointer. */
     st->todo_list = Op_val (new_v)[1]; /* Remove from list. */
 
@@ -436,7 +442,7 @@ static void oldify_mopup (struct oldify_state* st, int do_ephemerons)
               :  &Op_val(re->ephe)[re->offset];
       if (*data != caml_ephe_none && Is_block(*data) && Is_minor(*data) ) {
         resolve_infix_val(data);
-        if (ALREADY_PROMOTED(get_header_val(*data))) { /* Value copied to major heap */
+        if (IS_ALREADY_PROMOTED(get_header_val(*data))) { /* Value copied to major heap */
           *data = Op_val(*data)[0];
         } else {
           oldify_one(st, *data, data);
@@ -591,7 +597,7 @@ void caml_empty_minor_heap_promote (struct domain* domain, int participating_cou
   for (elt = self_minor_tables->custom.base; elt < self_minor_tables->custom.ptr; elt++) {
     value *v = &elt->block;
     if (Is_block(*v) && Is_minor(*v)) {
-      if (ALREADY_PROMOTED(get_header_val(*v))) { /* value copied to major heap */
+      if (IS_ALREADY_PROMOTED(get_header_val(*v))) { /* value copied to major heap */
         *v = Op_val(*v)[0];
       } else {
         oldify_one(&st, *v, v);
@@ -651,10 +657,10 @@ void caml_empty_minor_heap_promote (struct domain* domain, int participating_cou
   domain_state->stat_promoted_words += domain_state->allocated_words - prev_alloc_words;
 
   caml_ev_end("minor_gc");
-  caml_gc_log ("Minor collection of domain %d completed: %2.0f%% of %u KB live, rewrite: successes=%u failures=%u",
+  caml_gc_log ("Minor collection of domain %d completed: %2.0f%% of %u KB live, rewrite: successes=%u failures=%u. Collisions: %ld",
                domain->state->id,
                100.0 * (double)st.live_bytes / (double)minor_allocated_bytes,
-               (unsigned)(minor_allocated_bytes + 512)/1024, rewrite_successes, rewrite_failures);
+               (unsigned)(minor_allocated_bytes + 512)/1024, rewrite_successes, rewrite_failures, st.collisions);
 }
 
 void caml_do_opportunistic_major_slice(struct domain* domain, void* unused)
