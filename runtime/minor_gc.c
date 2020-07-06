@@ -44,6 +44,7 @@ extern value caml_ephe_none; /* See weak.c */
 struct generic_table CAML_TABLE_STRUCT(char);
 
 static atomic_intnat domains_finished_minor_gc;
+static atomic_intnat domains_finished_remembered_set;
 
 static atomic_uintnat caml_minor_cycles_started = 0;
 
@@ -502,6 +503,8 @@ void caml_empty_minor_heap_domain_clear (struct domain* domain, void* unused)
 
   asize_t wsize = domain_state->minor_heap_wsz;
 
+  uintnat old_young_start = (uintnat)domain_state->young_start;
+
   if( domain_state->young_phase == 0 ) {
     domain_state->young_start = (char*)domain_state->young_end;
     domain_state->young_end = (char*)(domain_state->young_start + Bsize_wsize(wsize) );
@@ -513,9 +516,15 @@ void caml_empty_minor_heap_domain_clear (struct domain* domain, void* unused)
 
     domain_state->young_phase = 0;
   }
+
+  /* We do this to take care that we don't overwrite an interrupt that may occur in a race with us. */
+  atomic_compare_exchange_strong((atomic_uintnat*)&domain_state->young_limit, &old_young_start, (uintnat)domain_state->young_start);
+  atomic_store_rel((atomic_uintnat*)&domain_state->young_ptr, (uintnat)domain_state->young_end);
+
+  caml_gc_log("young_start: 0x%lx, young_end: 0x%lx, young_phase: 0x%lx, young_limit: 0x%lx", (uintnat)domain_state->young_start, (uintnat)domain_state->young_end, (uintnat)domain_state->young_phase, (uintnat)domain_state->young_limit);
 }
 
-void caml_empty_minor_heap_promote (struct domain* domain, int participating_count, struct domain** participating, int not_alone)
+int caml_empty_minor_heap_promote (struct domain* domain, int participating_count, struct domain** participating, int not_alone)
 {
   caml_domain_state* domain_state = domain->state;
   struct caml_minor_tables *self_minor_tables = domain_state->minor_tables;
@@ -528,8 +537,6 @@ void caml_empty_minor_heap_promote (struct domain* domain, int participating_cou
   struct oldify_state st = {0};
   value **r;
   intnat c, curr_idx;
-
-  uintnat limit_at_start = domain_state->young_limit;
 
   st.promote_domain = domain;
 
@@ -598,7 +605,11 @@ void caml_empty_minor_heap_promote (struct domain* domain, int participating_cou
     }
   }
 
-  atomic_store_rel((atomic_uintnat*)&domain_state->young_limit, (uintnat)domain_state->young_start);
+  caml_gc_log("set young limit to 0x%lx", (uintnat)domain_state->young_start);
+
+  if( not_alone ) {
+    atomic_fetch_add(&domains_finished_remembered_set, 1);
+  }
 
   #ifdef DEBUG
     caml_global_barrier();
@@ -660,10 +671,7 @@ void caml_empty_minor_heap_promote (struct domain* domain, int participating_cou
   caml_ev_end("minor_gc/local_roots/promote");
   caml_ev_end("minor_gc/local_roots");
 
-  /* we reset these pointers before allowing any mutators to be
-     released to avoid races where another domain signals an interrupt
-     and we clobber it */
-
+  atomic_store_rel((atomic_uintnat*)&domain_state->young_limit, (uintnat)domain_state->young_start);
   atomic_store_rel((atomic_uintnat*)&domain_state->young_ptr, (uintnat)domain_state->young_end);
 
   if( not_alone ) {
@@ -679,6 +687,8 @@ void caml_empty_minor_heap_promote (struct domain* domain, int participating_cou
                domain->state->id,
                100.0 * (double)st.live_bytes / (double)minor_allocated_bytes,
                (unsigned)(minor_allocated_bytes + 512)/1024, rewrite_successes, rewrite_failures, st.collisions);
+
+  return 0 ; // st.collisions == 0;
 }
 
 void caml_do_opportunistic_major_slice(struct domain* domain, void* unused)
@@ -698,6 +708,7 @@ void caml_do_opportunistic_major_slice(struct domain* domain, void* unused)
 */
 void caml_empty_minor_heap_setup(struct domain* domain) {
   atomic_store_explicit(&domains_finished_minor_gc, 0, memory_order_release);
+  atomic_store_explicit(&domains_finished_remembered_set, 0, memory_order_release);
 }
 
 /* must be called within a STW section */
@@ -720,12 +731,13 @@ static void caml_stw_empty_minor_heap_no_major_slice (struct domain* domain, voi
   }
 
   caml_gc_log("running stw empty_minor_heap_promote");
-  caml_empty_minor_heap_promote(domain, participating_count, participating, not_alone);
+  int safe_to_early_leave = caml_empty_minor_heap_promote(domain, participating_count, participating, not_alone);
 
   if( not_alone ) {
     caml_ev_begin("minor_gc/leave_barrier");
     SPIN_WAIT {
-      if( atomic_load_explicit(&domains_finished_minor_gc, memory_order_acquire) == participating_count ) {
+      if( (safe_to_early_leave && atomic_load_explicit(&domains_finished_remembered_set, memory_order_acquire) == participating_count)
+      ||  (!safe_to_early_leave && atomic_load_explicit(&domains_finished_minor_gc, memory_order_acquire) == participating_count)) {
         break;
       }
 
