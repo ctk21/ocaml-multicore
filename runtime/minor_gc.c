@@ -45,6 +45,7 @@ struct generic_table CAML_TABLE_STRUCT(char);
 
 static atomic_intnat domains_finished_minor_gc;
 static atomic_intnat domains_finished_remembered_set;
+static atomic_intnat domains_colliding_in_remembered_set;
 
 static atomic_uintnat caml_minor_cycles_started = 0;
 
@@ -647,6 +648,9 @@ int caml_empty_minor_heap_promote (struct domain* domain, int participating_coun
   caml_ev_end("minor_gc/finalizers_admin");
 
   if( not_alone ) {
+    if( st.collisions > 0 ) {
+      atomic_fetch_add(&domains_colliding_in_remembered_set, 1);
+    }
     atomic_fetch_add(&domains_finished_remembered_set, 1);
   }
 
@@ -736,7 +740,7 @@ static void caml_stw_empty_minor_heap_no_major_slice (struct domain* domain, voi
   if( not_alone ) {
     caml_ev_begin("minor_gc/leave_barrier");
     SPIN_WAIT {
-      if( (safe_to_early_leave && atomic_load_explicit(&domains_finished_remembered_set, memory_order_acquire) == participating_count)
+      if( (safe_to_early_leave && atomic_load_explicit(&domains_finished_remembered_set, memory_order_acquire) == participating_count && atomic_load_explicit(&domains_colliding_in_remembered_set, memory_order_acquire) == 0)
       ||  (!safe_to_early_leave && atomic_load_explicit(&domains_finished_minor_gc, memory_order_acquire) == participating_count)) {
         break;
       }
