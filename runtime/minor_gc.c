@@ -745,7 +745,7 @@ static void caml_stw_empty_minor_heap_no_major_slice (struct domain* domain, voi
       // 2) safe to early leave and domains colliding in remembered set and all domains finished minor gc
       // 3) not safe to early leave and all domains finished minor gc
       if( (safe_to_early_leave && atomic_load_explicit(&domains_finished_remembered_set, memory_order_acquire) == participating_count && atomic_load_explicit(&domains_colliding_in_remembered_set, memory_order_acquire) == 0)
-      ||  (safe_to_early_leave && atomic_load_explicit(&domains_finished_remembered_set, memory_order_acq_rel) == participating_count)
+      ||  (safe_to_early_leave && atomic_load_explicit(&domains_finished_remembered_set, memory_order_acquire) == participating_count)
       ||  (!safe_to_early_leave && atomic_load_explicit(&domains_finished_minor_gc, memory_order_acquire) == participating_count)) {
         break;
       }
