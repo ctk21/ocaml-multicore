@@ -518,7 +518,10 @@ void caml_empty_minor_heap_domain_clear (struct domain* domain, void* unused)
   }
 
   /* We do this to take care that we don't overwrite an interrupt that may occur in a race with us. */
-  atomic_compare_exchange_strong((atomic_uintnat*)&domain_state->young_limit, &old_young_start, (uintnat)domain_state->young_start);
+  if(!atomic_compare_exchange_strong((atomic_uintnat*)&domain_state->young_limit, &old_young_start, (uintnat)domain_state->young_start)) {
+    /* if we failed to CAS, someone must be trying to send us an interrupt */
+    CAMLassert(atomic_load((atomic_uintnat*)&domain_state->young_limit) == (uintnat)(-1));
+  }
   atomic_store_rel((atomic_uintnat*)&domain_state->young_ptr, (uintnat)domain_state->young_end);
 
   caml_gc_log("young_start: 0x%lx, young_end: 0x%lx, young_phase: 0x%lx, young_limit: 0x%lx", (uintnat)domain_state->young_start, (uintnat)domain_state->young_end, (uintnat)domain_state->young_phase, (uintnat)domain_state->young_limit);
@@ -607,10 +610,6 @@ int caml_empty_minor_heap_promote (struct domain* domain, int participating_coun
 
   caml_gc_log("set young limit to 0x%lx", (uintnat)domain_state->young_start);
 
-  if( not_alone ) {
-    atomic_fetch_add(&domains_finished_remembered_set, 1);
-  }
-
   #ifdef DEBUG
     caml_global_barrier();
     // At this point all domains should have gone through all remembered set entries
@@ -647,6 +646,10 @@ int caml_empty_minor_heap_promote (struct domain* domain, int participating_coun
   caml_minor_heap_domain_finalizers_admin(domain, 0);
   caml_ev_end("minor_gc/finalizers_admin");
 
+  if( not_alone ) {
+    atomic_fetch_add(&domains_finished_remembered_set, 1);
+  }
+
 #ifdef DEBUG
   caml_global_barrier();
   caml_gc_log("ref_base: %p, ref_ptr: %p",
@@ -671,9 +674,6 @@ int caml_empty_minor_heap_promote (struct domain* domain, int participating_coun
   caml_ev_end("minor_gc/local_roots/promote");
   caml_ev_end("minor_gc/local_roots");
 
-  atomic_store_rel((atomic_uintnat*)&domain_state->young_limit, (uintnat)domain_state->young_start);
-  atomic_store_rel((atomic_uintnat*)&domain_state->young_ptr, (uintnat)domain_state->young_end);
-
   if( not_alone ) {
     atomic_fetch_add_explicit(&domains_finished_minor_gc, 1, memory_order_release);
   }
@@ -688,7 +688,7 @@ int caml_empty_minor_heap_promote (struct domain* domain, int participating_coun
                100.0 * (double)st.live_bytes / (double)minor_allocated_bytes,
                (unsigned)(minor_allocated_bytes + 512)/1024, rewrite_successes, rewrite_failures, st.collisions);
 
-  return 0 ; // st.collisions == 0;
+  return st.collisions == 0;
 }
 
 void caml_do_opportunistic_major_slice(struct domain* domain, void* unused)
