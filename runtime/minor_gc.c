@@ -532,8 +532,6 @@ int caml_empty_minor_heap_promote (struct domain* domain, int participating_coun
   caml_domain_state* domain_state = domain->state;
   struct caml_minor_tables *self_minor_tables = domain_state->minor_tables;
   struct caml_custom_elt *elt;
-  unsigned rewrite_successes = 0;
-  unsigned rewrite_failures = 0;
   char* young_ptr = domain_state->young_ptr;
   char* young_end = domain_state->young_end;
   uintnat minor_allocated_bytes = young_end - young_ptr;
@@ -547,7 +545,7 @@ int caml_empty_minor_heap_promote (struct domain* domain, int participating_coun
      when minor heaps can reference each other? */
   uintnat prev_alloc_words = domain_state->allocated_words;
 
-  caml_gc_log ("Minor collection of domain %d starting", domain->state->id);
+  caml_gc_log ("Minor GC %u starting", (unsigned)caml_minor_cycles_started);
   caml_ev_begin("minor_gc");
   caml_ev_begin("minor_gc/remembered_set");
 
@@ -608,8 +606,6 @@ int caml_empty_minor_heap_promote (struct domain* domain, int participating_coun
     }
   }
 
-  caml_gc_log("set young limit to 0x%lx", (uintnat)domain_state->young_start);
-
   #ifdef DEBUG
     caml_global_barrier();
     // At this point all domains should have gone through all remembered set entries
@@ -650,6 +646,7 @@ int caml_empty_minor_heap_promote (struct domain* domain, int participating_coun
     if( st.collisions == 0 ) {
       atomic_fetch_add(&domains_finished_not_colliding_in_remembered_set, 1);
     }
+    caml_gc_log("Remembered/ephemeron/finalizer collisions: %ld", st.collisions);
   }
 
 #ifdef DEBUG
@@ -685,12 +682,13 @@ int caml_empty_minor_heap_promote (struct domain* domain, int participating_coun
   domain_state->stat_promoted_words += domain_state->allocated_words - prev_alloc_words;
 
   caml_ev_end("minor_gc");
-  caml_gc_log ("Minor collection of domain %d completed: %2.0f%% of %u KB live, rewrite: successes=%u failures=%u. Collisions: %ld",
-               domain->state->id,
+  caml_gc_log ("Minor GC %u completed: %2.0f%% of %u KB live, collisions: %ld",
+               (unsigned)caml_minor_cycles_started,
                100.0 * (double)st.live_bytes / (double)minor_allocated_bytes,
-               (unsigned)(minor_allocated_bytes + 512)/1024, rewrite_successes, rewrite_failures, st.collisions);
+               (unsigned)(minor_allocated_bytes + 512)/1024,
+               st.collisions);
 
-  return st.collisions == 0;
+  return st.collisions;
 }
 
 void caml_do_opportunistic_major_slice(struct domain* domain, void* unused)
@@ -733,24 +731,31 @@ static void caml_stw_empty_minor_heap_no_major_slice (struct domain* domain, voi
   }
 
   caml_gc_log("running stw empty_minor_heap_promote");
-  int safe_to_early_leave = caml_empty_minor_heap_promote(domain, participating_count, participating, not_alone);
+  int number_of_collisions = caml_empty_minor_heap_promote(domain, participating_count, participating, not_alone);
 
   if( not_alone ) {
     caml_ev_begin("minor_gc/leave_barrier");
     SPIN_WAIT {
       /* Every domain got to the end of the GC, every domain can go
       */
-      if (atomic_load_explicit(&domains_finished_minor_gc, memory_order_acquire) == participating_count)
+      if (atomic_load_explicit(&domains_finished_minor_gc, memory_order_acquire) == participating_count) {
+        caml_gc_log("Standard release from minor GC %u collisions=%d",
+            (unsigned)caml_minor_cycles_started,
+            number_of_collisions);
         break;
+      }
 
       /* There are domains that are still garbage collecting.
         If everyone got through the remembered set without colliding and
         we did our local roots without colliding, then we can leave
       */
-      if (safe_to_early_leave &&
+      if (number_of_collisions == 0 &&
         atomic_load_explicit(&domains_finished_not_colliding_in_remembered_set, memory_order_acquire) == participating_count)
+      {
+        caml_gc_log("Early release from minor GC %u",
+            (unsigned)caml_minor_cycles_started);
         break;
-
+      }
       caml_do_opportunistic_major_slice(domain, 0);
     }
     caml_ev_end("minor_gc/leave_barrier");
