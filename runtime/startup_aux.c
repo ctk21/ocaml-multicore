@@ -69,6 +69,8 @@ static void init_startup_params()
   }
 #endif
   params.cleanup_on_exit = 0;
+
+  params.own_remembered_set = 0;
 }
 
 static void scanmult (char_os *opt, uintnat *var)
@@ -119,6 +121,7 @@ void caml_parse_ocamlrunparam(void)
       case 'V': scanmult (opt, &params.verify_heap); break;
       //case 'w': scanmult (opt, &caml_init_major_window); break;
       case 'W': scanmult (opt, &caml_runtime_warnings); break;
+      case 'Z': scanmult (opt, &params.own_remembered_set); break;
       }
       --opt; /* to handle patterns like ",b=1" */
       while (*opt != '\0'){

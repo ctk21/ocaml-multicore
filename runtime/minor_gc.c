@@ -551,7 +551,7 @@ int caml_empty_minor_heap_promote (struct domain* domain, int participating_coun
 
   int remembered_roots = 0;
 
-  if( not_alone ) {
+  if( not_alone && !caml_params->own_remembered_set ) {
     int participating_idx = -1;
     struct domain* domain_self = caml_domain_self();
 
@@ -739,9 +739,14 @@ static void caml_stw_empty_minor_heap_no_major_slice (struct domain* domain, voi
       /* Every domain got to the end of the GC, every domain can go
       */
       if (atomic_load_explicit(&domains_finished_minor_gc, memory_order_acquire) == participating_count) {
-        caml_gc_log("Standard release from minor GC %u collisions=%d",
+
+        int domains_collided_on_remembered = participating_count - domains_finished_not_colliding_in_remembered_set;
+        caml_gc_log("Standard release from minor GC %u collisions=%d domains_collided_on_remembered=%d delayed=%d",
             (unsigned)caml_minor_cycles_started,
-            number_of_collisions);
+            number_of_collisions,
+            domains_collided_on_remembered,
+            (int)(domains_collided_on_remembered > 0 || number_of_collisions > 0)
+            );
         break;
       }
 
