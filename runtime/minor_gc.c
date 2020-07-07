@@ -44,8 +44,7 @@ extern value caml_ephe_none; /* See weak.c */
 struct generic_table CAML_TABLE_STRUCT(char);
 
 static atomic_intnat domains_finished_minor_gc;
-static atomic_intnat domains_finished_remembered_set;
-static atomic_intnat domains_colliding_in_remembered_set;
+static atomic_intnat domains_finished_not_colliding_in_remembered_set;
 
 static atomic_uintnat caml_minor_cycles_started = 0;
 
@@ -648,10 +647,9 @@ int caml_empty_minor_heap_promote (struct domain* domain, int participating_coun
   caml_ev_end("minor_gc/finalizers_admin");
 
   if( not_alone ) {
-    if( st.collisions > 0 ) {
-      atomic_fetch_add(&domains_colliding_in_remembered_set, 1);
+    if( st.collisions == 0 ) {
+      atomic_fetch_add(&domains_finished_not_colliding_in_remembered_set, 1);
     }
-    atomic_fetch_add(&domains_finished_remembered_set, 1);
   }
 
 #ifdef DEBUG
@@ -712,7 +710,7 @@ void caml_do_opportunistic_major_slice(struct domain* domain, void* unused)
 */
 void caml_empty_minor_heap_setup(struct domain* domain) {
   atomic_store_explicit(&domains_finished_minor_gc, 0, memory_order_release);
-  atomic_store_explicit(&domains_finished_remembered_set, 0, memory_order_release);
+  atomic_store_explicit(&domains_finished_not_colliding_in_remembered_set, 0, memory_order_release);
 }
 
 /* must be called within a STW section */
@@ -740,15 +738,18 @@ static void caml_stw_empty_minor_heap_no_major_slice (struct domain* domain, voi
   if( not_alone ) {
     caml_ev_begin("minor_gc/leave_barrier");
     SPIN_WAIT {
-      // Three cases here:
-      // 1) safe to early leave and no domains colliding in remembered set and all domains finished remembered set
-      // 2) safe to early leave and domains colliding in remembered set and all domains finished minor gc
-      // 3) not safe to early leave and all domains finished minor gc
-      if( (safe_to_early_leave && atomic_load_explicit(&domains_finished_remembered_set, memory_order_acquire) == participating_count && atomic_load_explicit(&domains_colliding_in_remembered_set, memory_order_acquire) == 0)
-      ||  (safe_to_early_leave && atomic_load_explicit(&domains_finished_remembered_set, memory_order_acquire) == participating_count)
-      ||  (!safe_to_early_leave && atomic_load_explicit(&domains_finished_minor_gc, memory_order_acquire) == participating_count)) {
+      /* Every domain got to the end of the GC, every domain can go
+      */
+      if (atomic_load_explicit(&domains_finished_minor_gc, memory_order_acquire) == participating_count)
         break;
-      }
+
+      /* There are domains that are still garbage collecting.
+        If everyone got through the remembered set without colliding and
+        we did our local roots without colliding, then we can leave
+      */
+      if (safe_to_early_leave &&
+        atomic_load_explicit(&domains_finished_not_colliding_in_remembered_set, memory_order_acquire) == participating_count)
+        break;
 
       caml_do_opportunistic_major_slice(domain, 0);
     }
