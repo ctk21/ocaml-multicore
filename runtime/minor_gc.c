@@ -666,8 +666,12 @@ int caml_empty_minor_heap_promote (struct domain* domain, int participating_coun
 #endif
 
   caml_ev_begin("minor_gc/local_roots");
+  caml_ev_begin("minor_gc/local_roots/roots");
   caml_do_local_roots(&oldify_one, &st, domain, 0);
+  caml_ev_end("minor_gc/local_roots/roots");
+  caml_ev_begin("minor_gc/local_roots/stack");
   caml_scan_stack(&oldify_one, &st, domain_state->current_stack);
+  caml_ev_end("minor_gc/local_roots/stack");
   caml_ev_begin("minor_gc/local_roots/promote");
   oldify_mopup (&st, 0);
   caml_ev_end("minor_gc/local_roots/promote");

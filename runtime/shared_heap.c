@@ -16,6 +16,7 @@
 #include "caml/shared_heap.h"
 #include "caml/sizeclasses.h"
 #include "caml/startup_aux.h"
+#include "caml/eventlog.h"
 
 typedef unsigned int sizeclass;
 struct global_heap_state global = {0 << 8, 1 << 8, 2 << 8};
@@ -143,6 +144,7 @@ void caml_sample_heap_stats(struct caml_heap_state* local, struct heap_stats* h)
 static pool* pool_acquire(struct caml_heap_state* local) {
   pool* r;
 
+  caml_ev_begin("pool_acquire");
   caml_plat_lock(&pool_freelist.lock);
   if (!pool_freelist.free) {
     void* mem = caml_mem_map(Bsize_wsize(POOL_WSIZE) * POOLS_PER_ALLOCATION,
@@ -162,6 +164,7 @@ static pool* pool_acquire(struct caml_heap_state* local) {
   if (r)
     pool_freelist.free = r->next;
   caml_plat_unlock(&pool_freelist.lock);
+  caml_ev_end("pool_acquire");
 
   if (r) Assert (r->owner == 0);
   return r;
@@ -211,16 +214,19 @@ static pool* pool_find(struct caml_heap_state* local, sizeclass sz) {
   if (r) return r;
 
   /* Otherwise, try to sweep until we find one */
+  caml_ev_begin("pool_find/unswept");
   while (!local->avail_pools[sz] && local->unswept_avail_pools[sz]) {
     caml_domain_state* domain_state = caml_domain_self()->state;
     domain_state->opportunistic_work +=
       pool_sweep(local, &local->unswept_avail_pools[sz], sz);
   }
+  caml_ev_end("pool_find/unswept");
 
   r = local->avail_pools[sz];
   if (r) return r;
 
   /* Haven't managed to find a pool locally, try the global ones */
+  caml_ev_begin("pool_find/global");
   caml_plat_lock(&pool_freelist.lock);
   if( pool_freelist.global_avail_pools[sz] ) {
     r = pool_freelist.global_avail_pools[sz];
@@ -284,6 +290,7 @@ static pool* pool_find(struct caml_heap_state* local, sizeclass sz) {
       pool_sweep(local, &local->full_pools[sz], sz);
     r = local->avail_pools[sz];
   }
+  caml_ev_end("pool_find/global");
 
   if (r) return r;
 
