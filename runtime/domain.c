@@ -873,11 +873,14 @@ void caml_handle_gc_interrupt() {
   if (((uintnat)Caml_state->young_ptr - Bhsize_wosize(Max_young_wosize) <
        (uintnat)Caml_state->young_start) ||
       Caml_state->force_major_slice) {
-    caml_ev_begin("dispatch");
+    char * tag = Caml_state->force_major_slice ?
+      "dispatch_force_slice" : "dispatch_young";
+
+    caml_ev_begin(tag);
     /* out of minor heap or collection forced */
     Caml_state->force_major_slice = 0;
     caml_minor_collection();
-    caml_ev_end("dispatch");
+    caml_ev_end(tag);
   }
 }
 

@@ -356,6 +356,9 @@ CAMLexport value caml_alloc_shr (mlsize_t wosize, tag_t tag)
   }
   dom_st->allocated_words += Whsize_wosize (wosize);
   if (dom_st->allocated_words > dom_st->minor_heap_wsz) {
+    if (!Caml_state->force_major_slice) {
+      caml_gc_log("setting force_major_slice: allocated=%lu", dom_st->allocated_words);
+    }
     caml_urge_major_slice();
   }
 
@@ -383,6 +386,9 @@ CAMLexport value caml_alloc_shr_noexc(mlsize_t wosize, tag_t tag) {
   }
   dom_st->allocated_words += Whsize_wosize(wosize);
   if (dom_st->allocated_words > dom_st->minor_heap_wsz) {
+    if (!Caml_state->force_major_slice) {
+      caml_gc_log("setting force_major_slice: allocated=%lu", dom_st->allocated_words);
+    }
     caml_urge_major_slice();
   }
 
