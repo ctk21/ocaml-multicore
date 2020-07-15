@@ -845,11 +845,19 @@ void caml_interrupt_self() {
   interrupt_domain(domain_self);
 }
 
-/* Arrange for a garbage collection to be performed on the current domain
+/* Arrange for a major GC slice to be performed on the current domain
    as soon as possible */
-void caml_urge_major_slice (void)
+void caml_request_major_slice (void)
 {
-  Caml_state->force_major_slice = 1;
+  Caml_state->requested_major_slice = 1;
+  caml_interrupt_self();
+}
+
+/* Arrange for a minor GC to be performed on the current domain
+   as soon as possible */
+void caml_request_minor_gc (void)
+{
+  Caml_state->requested_minor_gc = 1;
   caml_interrupt_self();
 }
 
@@ -872,12 +880,19 @@ void caml_handle_gc_interrupt() {
 
   if (((uintnat)Caml_state->young_ptr - Bhsize_wosize(Max_young_wosize) <
        (uintnat)Caml_state->young_start) ||
-      Caml_state->force_major_slice) {
-    caml_ev_begin("dispatch");
+      Caml_state->requested_minor_gc) {
     /* out of minor heap or collection forced */
-    Caml_state->force_major_slice = 0;
+    caml_ev_begin("dispatch_minor_gc");
+    Caml_state->requested_minor_gc = 0;
     caml_minor_collection();
-    caml_ev_end("dispatch");
+    caml_ev_end("dispatch_minor_gc");
+  }
+
+  if (Caml_state->requested_major_slice) {
+    caml_ev_begin("dispatch_major_slice");
+    Caml_state->requested_major_slice = 0;
+    caml_major_collection_slice (0, 0);
+    caml_ev_end("dispatch_major_slice");
   }
 }
 
@@ -1314,7 +1329,9 @@ CAMLprim value caml_ml_domain_yield(value unused)
   caml_plat_lock(&s->lock);
   while (!Caml_state->pending_interrupts) {
     if (handle_incoming(s) == 0 && !found_work) {
+      caml_ev_begin("domain/idle_wait");
       caml_plat_wait(&s->cond);
+      caml_ev_end("domain/idle_wait");
     } else {
       caml_plat_unlock(&s->lock);
       caml_opportunistic_major_collection_slice(Chunk_size, &left);
@@ -1350,9 +1367,12 @@ CAMLprim value caml_ml_domain_interrupt(value domain)
   struct interruptor* target =
     &all_domains[unique_id % Max_domains].interruptor;
 
+  caml_ev_begin("domain/send_interrupt");
   if (!caml_send_interrupt(&domain_self->interruptor, target, &handle_ml_interrupt, &unique_id)) {
     /* the domain might have terminated, but that's fine */
   }
+  caml_ev_end("domain/send_interrupt");
+
   CAMLreturn (Val_unit);
 }
 
@@ -1387,7 +1407,9 @@ CAMLprim value caml_ml_domain_yield_until(value t)
       ret = Val_int(0); /* Domain.Sync.Timeout */
       break;
     } else if (handle_incoming(s) == 0 && !found_work) {
+      caml_ev_begin("domain/idle_wait");
       res = caml_plat_timedwait(&s->cond, ts);
+      caml_ev_end("domain/idle_wait");
       if (res) {
         ret = Val_int(0); /* Domain.Sync.Timeout */
         break;
@@ -1413,5 +1435,3 @@ CAMLprim value caml_ml_domain_cpu_relax(value t)
   handle_incoming_otherwise_relax (Caml_state, self);
   return Val_unit;
 }
-
-
