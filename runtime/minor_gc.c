@@ -748,7 +748,7 @@ void caml_do_opportunistic_major_slice(struct domain* domain, void* unused)
   if (caml_opportunistic_major_work_available()) {
     int log_events = caml_params->verb_gc & 0x40;
     if (log_events) caml_ev_begin("minor_gc/opportunistic_major_slice");
-    caml_opportunistic_major_collection_slice(0x200, 0);
+    caml_opportunistic_major_collection_slice(0x200);
     if (log_events) caml_ev_end("minor_gc/opportunistic_major_slice");
   }
 }
@@ -795,7 +795,7 @@ CAMLexport void caml_minor_collection (void)
   caml_handle_incoming_interrupts ();
   caml_empty_minor_heaps_once();
   caml_handle_incoming_interrupts ();
-  caml_major_collection_slice (0, 0);
+  caml_major_collection_slice (0);
   caml_final_do_calls();
 
   caml_ev_resume();
