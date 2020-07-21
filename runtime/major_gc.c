@@ -301,7 +301,7 @@ double caml_mean_space_overhead ()
 
 static uintnat default_slice_budget() {
   double p, heap_words;
-  intnat computed_work, opportunistic_credit;
+  intnat computed_work, opportunistic_credit, opportunistic_work;
   /*
      Free memory at the start of the GC cycle (garbage + free list) (assumed):
                  FM = heap_words * caml_percent_free
@@ -352,6 +352,7 @@ static uintnat default_slice_budget() {
   computed_work = (intnat) (p * (heap_sweep_words + (heap_words * 100 / (100 + caml_percent_free))));
 
   /* adjust computed work for opportunistic_work done by this domain already */
+  opportunistic_work = Caml_state->opportunistic_work;
   if ( Caml_state->opportunistic_work > computed_work ) {
     /* bound the credit that opportunistic_work can have vs computed_work */
     if (Caml_state->opportunistic_work > 2*computed_work) {
@@ -376,7 +377,7 @@ static uintnat default_slice_budget() {
   caml_gc_message (0x40, "amount of work to do = %"
                          ARCH_INTNAT_PRINTF_FORMAT "uu\n",
                    (uintnat) (p * 1000000));
-  caml_gc_message (0x40, "ordered work = %ld words\n", (intnat)-1);
+  caml_gc_message (0x40, "opportunistic work = %ld words\n", opportunistic_work);
   caml_gc_message (0x40, "opportunistic work credit = %ld words\n", opportunistic_credit);
   caml_gc_message (0x40, "computed work = %ld words\n", computed_work);
 
@@ -1137,11 +1138,11 @@ mark_again:
   if (budget_left)
     *budget_left = budget;
 
-  caml_gc_log("Major slice: %lu alloc, %ld work, %ld sweep, %ld mark (%lu blocks), %lu opp work",
+  caml_gc_log("Major slice [%ld]: %lu alloc, %ld work, %ld sweep, %ld mark (%lu blocks)",
+              opportunistic,
               (unsigned long)domain_state->allocated_words,
               (long)computed_work, (long)sweep_work, (long)mark_work,
-              (unsigned long)(domain_state->stat_blocks_marked - blocks_marked_before),
-              (unsigned long)domain_state->opportunistic_work);
+              (unsigned long)(domain_state->stat_blocks_marked - blocks_marked_before));
   domain_state->stat_major_words += domain_state->allocated_words;
   domain_state->allocated_words = 0;
   if (opportunistic) {
