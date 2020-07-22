@@ -1056,8 +1056,6 @@ static void try_complete_gc_phase (struct domain* domain, void* unused,
   caml_ev_end("major_gc/phase_change");
 }
 
-#define Chunk_size 0x4000
-
 intnat caml_opportunistic_major_work_available ()
 {
   struct domain* d = caml_domain_self();
@@ -1084,6 +1082,8 @@ static char collection_slice_mode_char(collection_slice_mode mode)
       return ' ';
   }
 }
+
+#define Chunk_size 0x400
 
 static intnat major_collection_slice(intnat howmuch,
                                      int participant_count,
