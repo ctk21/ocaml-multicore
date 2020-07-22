@@ -60,6 +60,7 @@ struct caml_heap_state {
   pool* full_pools[NUM_SIZECLASSES];
   pool* unswept_avail_pools[NUM_SIZECLASSES];
   pool* unswept_full_pools[NUM_SIZECLASSES];
+  pool* free;
 
   large_alloc* swept_large;
   large_alloc* unswept_large;
@@ -81,9 +82,10 @@ struct caml_heap_state* caml_init_shared_heap() {
       heap->avail_pools[i] = heap->full_pools[i] =
         heap->unswept_avail_pools[i] = heap->unswept_full_pools[i] = 0;
     }
-    heap->next_to_sweep = 0;
+    heap->free = 0;
     heap->swept_large = 0;
     heap->unswept_large = 0;
+    heap->next_to_sweep = 0;
     heap->owner = caml_domain_self();
     memset(&heap->stats, 0, sizeof(heap->stats));
   }
@@ -105,7 +107,7 @@ static int move_all_pools(pool** src, pool** dst, struct domain* new_owner) {
 
 void caml_teardown_shared_heap(struct caml_heap_state* heap) {
   int i;
-  int released = 0, released_large = 0;
+  int released = 0, released_large = 0, returned_free = 0;
   caml_plat_lock(&pool_freelist.lock);
   for (i = 0; i < NUM_SIZECLASSES; i++) {
     released +=
@@ -116,6 +118,11 @@ void caml_teardown_shared_heap(struct caml_heap_state* heap) {
     Assert(!heap->unswept_avail_pools[i]);
     Assert(!heap->unswept_full_pools[i]);
   }
+
+  /* return excess pools to the global free list */
+  returned_free = move_all_pools(&heap->free, &pool_freelist.free, NULL);
+  /* FIXME: give free pools back to the OS */
+
   Assert(!heap->unswept_large);
   while (heap->swept_large) {
     large_alloc* a = heap->swept_large;
@@ -124,11 +131,14 @@ void caml_teardown_shared_heap(struct caml_heap_state* heap) {
     pool_freelist.global_large = a;
     released_large++;
   }
+
   caml_accum_heap_stats(&pool_freelist.stats, &heap->stats);
   caml_plat_unlock(&pool_freelist.lock);
   caml_stat_free(heap);
-  caml_gc_log("Shutdown shared heap. Released %d active pools, %d large",
-              released, released_large);
+  caml_gc_log("Shutdown shared heap [%02d]: "
+              "Released %d active pools, %d large. Returned %d free pools",
+              heap->owner->state->id,
+              released, released_large, returned_free);
 }
 
 void caml_sample_heap_stats(struct caml_heap_state* local, struct heap_stats* h)
@@ -137,12 +147,21 @@ void caml_sample_heap_stats(struct caml_heap_state* local, struct heap_stats* h)
 }
 
 
-/* Allocating and deallocating pools from the global freelist. */
+/* Allocating and deallocating pools from local & global freelist. */
 
 #define POOLS_PER_ALLOCATION 16
 static pool* pool_acquire(struct caml_heap_state* local) {
   pool* r;
 
+  /* try our local free list before hitting the global freelist */
+  r = local->free;
+  if (r) {
+    Assert (r->owner == 0);
+    local->free = r->next;
+    return r;
+  }
+
+  /* need to try the global freelist */
   caml_plat_lock(&pool_freelist.lock);
   if (!pool_freelist.free) {
     void* mem = caml_mem_map(Bsize_wsize(POOL_WSIZE) * POOLS_PER_ALLOCATION,
@@ -172,11 +191,10 @@ static void pool_release(struct caml_heap_state* local, pool* pool, sizeclass sz
   Assert(pool->sz == sz);
   local->stats.pool_words -= POOL_WSIZE;
   local->stats.pool_frag_words -= POOL_HEADER_WSIZE + wastage_sizeclass[sz];
-  /* FIXME: give free pools back to the OS */
-  caml_plat_lock(&pool_freelist.lock);
-  pool->next = pool_freelist.free;
-  pool_freelist.free = pool;
-  caml_plat_unlock(&pool_freelist.lock);
+
+  /* place on local free list to be returned to global freelist on heap cycling */
+  pool->next = local->free;
+  local->free = pool;
 }
 
 static void calc_pool_stats(pool* a, sizeclass sz, struct heap_stats* s) {
@@ -788,7 +806,7 @@ void caml_cycle_heap_stw() {
 }
 
 void caml_cycle_heap(struct caml_heap_state* local) {
-  int i, received_p = 0, received_l = 0;
+  int i, received_p = 0, received_l = 0, returned_pools = 0;
 
   caml_gc_log("Cycling heap [%02d]", local->owner->state->id);
   for (i = 0; i < NUM_SIZECLASSES; i++) {
@@ -812,6 +830,11 @@ void caml_cycle_heap(struct caml_heap_state* local) {
                                  &local->unswept_full_pools[i],
                                  local->owner);
   }
+
+  /* return excess pools to the global free list */
+  returned_pools = move_all_pools(&local->free, &pool_freelist.free, NULL);
+  /* FIXME: give free pools back to the OS */
+
   while (pool_freelist.global_large) {
     large_alloc* a = pool_freelist.global_large;
     pool_freelist.global_large = a->next;
@@ -825,8 +848,12 @@ void caml_cycle_heap(struct caml_heap_state* local) {
     memset(&pool_freelist.stats, 0, sizeof(pool_freelist.stats));
   }
   caml_plat_unlock(&pool_freelist.lock);
-  if (received_p || received_l)
-    caml_gc_log("Received %d new pools, %d new large allocs", received_p, received_l);
+
+  if (received_p || received_l || returned_pools)
+    caml_gc_log("Shared heap cycled [%02d]: "
+      "Received %d global pools, %d global large allocs. Returned %d pools",
+      local->owner->state->id,
+      received_p, received_l, returned_pools);
 
   local->next_to_sweep = 0;
 }
