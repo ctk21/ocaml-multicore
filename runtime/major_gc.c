@@ -300,8 +300,10 @@ double caml_mean_space_overhead ()
 }
 
 static uintnat update_major_work_todo(intnat howmuch) {
-  double p, heap_words, spend, filt_p, tw, one_on_g;
+  double p, heap_words, spend, filt_p, tw, one_on_g, opp_p;
   intnat computed_work;
+  double initial_work_todo = Caml_state->major_work_todo;
+  double initial_work_credit = Caml_state->major_work_credit;
   /*
      Free memory at the start of the GC cycle (garbage + free list) (assumed):
                  FM = heap_words * caml_percent_free
@@ -369,7 +371,7 @@ static uintnat update_major_work_todo(intnat howmuch) {
 
   /* account for opportunistic work (measured in words) done elsewhere */
   {
-    double opp_p = Caml_state->major_opportunistic_work / tw / one_on_g;
+    opp_p = (double)Caml_state->major_opportunistic_work / tw;
     Caml_state->major_work_credit += opp_p;
     /* limit work credit to 1.0 */
     Caml_state->major_work_credit = fmin(Caml_state->major_work_credit, 1.0);
@@ -388,7 +390,8 @@ static uintnat update_major_work_todo(intnat howmuch) {
     if (howmuch == 0) {
       filt_p = Caml_state->major_work_todo;
     } else {
-      filt_p = (double) (saved_terminated_words + howmuch) * one_on_g;
+      filt_p = (double) howmuch / tw;
+      /* FIXME: do we want raw number of words to mark or equivalent of allocation? */
     }
     Caml_state->major_work_credit += filt_p;
     /* limit work credit to 1.0 */
@@ -400,7 +403,28 @@ static uintnat update_major_work_todo(intnat howmuch) {
   caml_gc_message (0x40, "filtered work-to-do = %"
                          ARCH_INTNAT_PRINTF_FORMAT "du\n",
                    (intnat) (filt_p * 1000000));
-  caml_gc_message (0x40, "computed work = %ld words\n", computed_work);
+  caml_gc_message (0x40, "computed work = %"
+                         ARCH_INTNAT_PRINTF_FORMAT "d words\n",
+                   computed_work);
+
+  caml_gc_log("Major work: %"ARCH_INTNAT_PRINTF_FORMAT "d ordered, "
+                         " %"ARCH_INTNAT_PRINTF_FORMAT "u heap_words, "
+                         " %"ARCH_INTNAT_PRINTF_FORMAT "u allocated, "
+                         " %"ARCH_INTNAT_PRINTF_FORMAT "uu opp_p, "
+                         " %"ARCH_INTNAT_PRINTF_FORMAT "uu work_todo, "
+                         " %"ARCH_INTNAT_PRINTF_FORMAT "uu work_credit, "
+                         " %"ARCH_INTNAT_PRINTF_FORMAT "uu raw_work, "
+                         " %"ARCH_INTNAT_PRINTF_FORMAT "du filtered, "
+                         " %"ARCH_INTNAT_PRINTF_FORMAT"d computed"
+                         ,
+                         howmuch, (uintnat)heap_words, Caml_state->allocated_words,
+                         (uintnat) (opp_p * 1000000),
+                         (intnat) (initial_work_todo*1000000), (intnat)(initial_work_credit*1000000),
+                         (uintnat) (p * 1000000), (intnat) (filt_p * 1000000),
+                         computed_work);
+
+  Caml_state->stat_major_words += Caml_state->allocated_words;
+  Caml_state->allocated_words = 0;
 
   return computed_work;
 }
@@ -1155,13 +1179,12 @@ mark_again:
 
   if (log_events) caml_ev_end("major_gc/slice");
 
-  caml_gc_log("Major slice [%ld]: %lu alloc, %ld work, %ld sweep, %ld mark (%lu blocks)",
+  caml_gc_log("Major slice [%ld]: %c phase, %ld work, %ld sweep, %ld mark (%lu blocks)",
               opportunistic,
-              (unsigned long)domain_state->allocated_words,
+              caml_gc_phase_char(caml_gc_phase),
               (long)computed_work, (long)sweep_work, (long)mark_work,
               (unsigned long)(domain_state->stat_blocks_marked - blocks_marked_before));
-  domain_state->stat_major_words += domain_state->allocated_words;
-  domain_state->allocated_words = 0;
+
   if (budget < 0)
     domain_state->major_opportunistic_work += -budget;
 

@@ -58,9 +58,9 @@ DOMAIN_STATE(uintnat, allocated_words)
 
 DOMAIN_STATE(uintnat, swept_words)
 
-DOMAIN_STATE(uintnat, major_work_todo)
+DOMAIN_STATE(double, major_work_todo)
 
-DOMAIN_STATE(uintnat, major_work_credit)
+DOMAIN_STATE(double, major_work_credit)
 
 DOMAIN_STATE(uintnat, major_opportunistic_work)
 
