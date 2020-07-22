@@ -1254,20 +1254,17 @@ intnat caml_opportunistic_major_collection_slice(intnat howmuch)
 
 intnat caml_major_collection_slice(intnat howmuch)
 {
-  intnat work_left, work_todo;
+  intnat work_left;
 
   /* if this is an auto-triggered GC slice, make it interruptible */
   if (howmuch == -1) {
-    do {
-      work_left = major_collection_slice(-1, 0, 0, Slice_interruptible);
-      caml_handle_incoming_interrupts();
-      work_todo = get_major_slice_work(-1);
-      if (work_todo > 0) {
-        caml_gc_log("Re-entering auto-triggered major slice following interrupt");
-      }
-    } while (work_todo > 0);
+    work_left = major_collection_slice(-1, 0, 0, Slice_interruptible);
+    if (get_major_slice_work(-1) > 0) {
+      caml_gc_log("Major slice interrupted, rescheduling major slice");
+      caml_request_major_slice();
+    }
   } else {
-    /* TODO: could make forced slices interruptible, but would need to do accounting */
+    /* TODO: could make forced API slices interruptible, but would need to do accounting or pass up interrupt */
     work_left = major_collection_slice(howmuch, 0, 0, Slice_uninterruptible);
   }
 
