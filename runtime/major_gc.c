@@ -1235,7 +1235,6 @@ mark_again:
   return budget;
 }
 
-
 intnat caml_opportunistic_major_collection_slice(intnat howmuch)
 {
   return major_collection_slice(howmuch, 0, 0, 1);
@@ -1243,7 +1242,26 @@ intnat caml_opportunistic_major_collection_slice(intnat howmuch)
 
 intnat caml_major_collection_slice(intnat howmuch)
 {
-  return major_collection_slice(howmuch, 0, 0, 0);
+  intnat work_todo, work_left;
+  intnat chunk = 0x400; /* TODO: how is this set? */
+
+  /* if this is an auto-triggered GC slice, make it interruptible */
+  if (howmuch == -1) {
+    update_major_slice_work();
+    work_todo = get_major_slice_work(-1);
+    do {
+      work_left = major_collection_slice(
+          chunk > work_todo ? work_todo : chunk, 0, 0, 0
+        );
+
+      caml_handle_incoming_interrupts();
+      work_todo = get_major_slice_work(-1);
+    } while (work_todo > 0);
+  } else {
+    work_left = major_collection_slice(howmuch, 0, 0, 0);
+  }
+
+  return work_left;
 }
 
 static void finish_major_cycle_callback (struct domain* domain, void* arg,
