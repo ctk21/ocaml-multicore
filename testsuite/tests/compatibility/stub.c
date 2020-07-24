@@ -9,7 +9,7 @@ typedef char * addr;
 CAMLprim value retrieve_young_limit(value v)
 {
   CAMLparam1(v);
-  printf("v is%s young\n", (Is_young(v) ? "" : " not"));
+  printf("v is%s minor\n", (Is_minor(v) ? "" : " not"));
 #ifdef CAML_NAME_SPACE
   CAMLreturn(caml_copy_nativeint((intnat)caml_young_limit));
 #else
