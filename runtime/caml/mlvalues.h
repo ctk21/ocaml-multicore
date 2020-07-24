@@ -220,15 +220,21 @@ bits  63        (64-P) (63-P)        10 9     8 7   0
 /* Is_young(val) is true iff val is a block in the current domain's minor heap.
    Since the minor heap is allocated in one aligned block, this can be tested
    via bitmasking. */
-#define Is_young(val) \
-  ((((uintnat)(val) ^ (uintnat)Caml_state) & Young_val_bitmask) == 0)
+/*#define Is_young(val) \
+  ((((uintnat)(val) ^ (uintnat)Caml_state) & Young_val_bitmask) == 0)*/
 
 /* Is_minor(val) is true iff val is a block in any domain's minor heap. */
-#define Is_minor(val) \
+/*#define Is_minor(val) \
   ((((uintnat)(val) ^ (uintnat)Caml_state) & Minor_val_bitmask) == 0)
 
-#define Is_block_and_young(val) Is_young(val)
-#define Is_block_and_minor(val) Is_minor(val)
+#define Is_block_and_minor(val) Is_minor(val)*/
+
+#define Is_minor(val) \
+  (CAMLassert (Is_block (val)), \
+   (char *)(val) < (char *)minor_heaps.end && \
+   (char *)(val) >= (char *)minor_heaps.base)
+
+#define Is_block_and_minor(val) Is_block(val) && Is_minor(val)
 
 /* NOTE: [Forward_tag] and [Infix_tag] must be just under
    [No_scan_tag], with [Infix_tag] the lower one.

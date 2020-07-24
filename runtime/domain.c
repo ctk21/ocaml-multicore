@@ -113,7 +113,7 @@ static struct dom_internal all_domains[Max_domains];
 
 CAMLexport atomic_uintnat caml_num_domains_running;
 
-static uintnat minor_heaps_base;
+struct minor_heaps_area minor_heaps = {0, 0};
 static __thread dom_internal* domain_self;
 
 static int64_t startup_timestamp;
@@ -250,6 +250,9 @@ static void create_domain(uintnat initial_minor_heap_wsize) {
     d->state.state = domain_state;
     domain_state->critical_section_nesting = 0;
 
+    domain_state->all_minor_heap_area = (void*)minor_heaps.base;
+    domain_state->all_minor_heap_area_end = (void*)minor_heaps.end;
+
     if (caml_init_signal_stack() < 0) {
       goto init_signal_stack_failure;
     }
@@ -328,7 +331,8 @@ void caml_init_domains(uintnat minor_heap_wsz) {
   heaps_base = caml_mem_map(size*2, size*2, 1 /* reserve_only */);
   if (!heaps_base) caml_raise_out_of_memory();
 
-  minor_heaps_base = (uintnat) heaps_base;
+  minor_heaps.base = (uintnat) heaps_base;
+  minor_heaps.end = (uintnat) (heaps_base + size*2);
 
   for (i = 0; i < Max_domains; i++) {
     struct dom_internal* dom = &all_domains[i];
@@ -348,7 +352,7 @@ void caml_init_domains(uintnat minor_heap_wsz) {
     dom->backup_thread_running = 0;
     dom->backup_thread_msg = BT_INIT;
 
-    domain_minor_heap_base = minor_heaps_base +
+    domain_minor_heap_base = minor_heaps.base +
       (uintnat)(1 << Minor_heap_align_bits) * (uintnat)i;
     dom->tls_area = domain_minor_heap_base;
     dom->tls_area_end =
@@ -536,7 +540,7 @@ struct domain* caml_domain_self()
 
 struct domain* caml_owner_of_young_block(value v) {
   Assert(Is_minor(v));
-  int heap_id = ((uintnat)v - minor_heaps_base) /
+  int heap_id = ((uintnat)v - minor_heaps.base) /
     (1 << Minor_heap_align_bits);
   return &all_domains[heap_id].state;
 }

@@ -35,6 +35,13 @@ struct domain {
   caml_domain_state* state;
 };
 
+/* area for all minor heaps */
+struct minor_heaps_area {
+  uintnat base;
+  uintnat end;
+};
+extern struct minor_heaps_area minor_heaps;
+
 #define Caml_check_gc_interrupt(dom_st)   \
   (CAMLalloc_point_here, \
    CAMLunlikely((uintnat)(dom_st)->young_ptr < (dom_st)->young_limit))

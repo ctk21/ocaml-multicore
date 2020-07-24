@@ -600,7 +600,7 @@ void caml_empty_minor_heap_promote (struct domain* domain, int participating_cou
     // We need to verify that all our remembered set entries are now in the major heap or promoted
     for( r = self_minor_tables->major_ref.base ; r < self_minor_tables->major_ref.ptr ; r++ ) {
       // Everything should be promoted
-      CAMLassert(!Is_minor(*r));
+      CAMLassert(!Is_minor((value)*r));
     }
   #endif
 

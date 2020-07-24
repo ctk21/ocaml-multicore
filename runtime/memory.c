@@ -396,10 +396,6 @@ int is_minor(value v) {
   return Is_minor(v);
 }
 
-int is_young(value v) {
-  return Is_young(v);
-}
-
 int has_status(value v, status s) {
   return Has_status_hd(Hd_val(v),s);
 }
