@@ -216,7 +216,7 @@ typedef uint64_t uintnat;
 #if SIZEOF_PTR  <= 4
 #define Minor_heap_align_bits 20
 #else
-#define Minor_heap_align_bits 24
+#define Minor_heap_align_bits 30
 #endif
 
 /* Default size of the minor zone. (words)  */

@@ -207,14 +207,14 @@ bits  63        (64-P) (63-P)        10 9     8 7   0
 /* All values which are not blocks in the current domain's minor heap
    differ from caml_domain_state in at least one of the bits set in
    Young_val_bitmask */
-#define Young_val_bitmask \
-  ((uintnat)1 | ~(((uintnat)1 << Minor_heap_align_bits) - (uintnat)1))
+/*#define Young_val_bitmask \
+  ((uintnat)1 | ~(((uintnat)1 << Minor_heap_align_bits) - (uintnat)1)) */
 
 /* All values which are not blocks in any domain's minor heap differ
    from caml_domain_state in at least one of the bits set in
    Minor_val_bitmask */
-#define Minor_val_bitmask \
-  ((uintnat)1 | ~(((uintnat)1 << (Minor_heap_align_bits + Minor_heap_sel_bits)) - (uintnat)1))
+/*#define Minor_val_bitmask \
+  ((uintnat)1 | ~(((uintnat)1 << (Minor_heap_align_bits + Minor_heap_sel_bits)) - (uintnat)1))*/
 
 
 /* Is_young(val) is true iff val is a block in the current domain's minor heap.
