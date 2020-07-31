@@ -95,28 +95,24 @@ void caml_alloc_point_here()
 }
 #endif /* DEBUG */
 
-void caml_gc_log (char *msg, ...)
+void caml_gc_log_internal(char* msg, ...)
 {
-  if ((caml_params->verb_gc & 0x800) != 0) {
-    char fmtbuf[512];
-    va_list args;
-    va_start (args, msg);
-    sprintf(fmtbuf, "[%02d] %s\n", Caml_state ? Caml_state->id : -1, msg);
-    vfprintf(stderr, fmtbuf, args);
-    va_end (args);
-    fflush(stderr);
-  }
+  char fmtbuf[512];
+  va_list args;
+  va_start (args, msg);
+  sprintf(fmtbuf, "[%02d] %s\n", Caml_state ? Caml_state->id : -1, msg);
+  vfprintf(stderr, fmtbuf, args);
+  va_end (args);
+  fflush(stderr);
 }
 
-void caml_gc_message (int level, char *msg, ...)
+void caml_gc_message_internal (char *msg, ...)
 {
-  if ((caml_params->verb_gc & level) != 0){
-    va_list ap;
-    va_start(ap, msg);
-    vfprintf (stderr, msg, ap);
-    va_end(ap);
-    fflush (stderr);
-  }
+  va_list ap;
+  va_start(ap, msg);
+  vfprintf (stderr, msg, ap);
+  va_end(ap);
+  fflush (stderr);
 }
 
 void (*caml_fatal_error_hook) (char *msg, va_list args) = NULL;
