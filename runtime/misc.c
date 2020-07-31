@@ -95,21 +95,12 @@ void caml_alloc_point_here()
 }
 #endif /* DEBUG */
 
-void caml_gc_log_internal(char* msg, ...)
-{
-  char fmtbuf[512];
-  va_list args;
-  va_start (args, msg);
-  sprintf(fmtbuf, "[%02d] %s\n", Caml_state ? Caml_state->id : -1, msg);
-  vfprintf(stderr, fmtbuf, args);
-  va_end (args);
-  fflush(stderr);
-}
-
 void caml_gc_message_internal (char *msg, ...)
 {
+  char fmtbuf[512];
   va_list ap;
   va_start(ap, msg);
+  sprintf(fmtbuf, "[%02d] %s\n", Caml_state ? Caml_state->id : -1, msg);
   vfprintf (stderr, msg, ap);
   va_end(ap);
   fflush (stderr);

@@ -42,6 +42,7 @@ extern void caml_win32_unregister_overflow_detection (void);
 
 static struct caml_params params;
 const struct caml_params* const caml_params = &params;
+const uintnat* const caml_verb_gc = &params.verb_gc;
 
 static void init_startup_params()
 {

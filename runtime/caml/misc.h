@@ -386,12 +386,7 @@ CAMLextern int caml_read_directory(char_os * dirname,
 #ifdef CAML_INTERNALS
 
 /* GC flags and messages */
-
-void caml_gc_log_internal (char *, ...)
-#ifdef __GNUC__
-  __attribute__ ((format (printf, 1, 2)))
-#endif
-;
+extern const uintnat* const caml_verb_gc;
 
 void caml_gc_message_internal (char *, ...)
 #ifdef __GNUC__
@@ -400,19 +395,14 @@ void caml_gc_message_internal (char *, ...)
 ;
 
 /* Use macros to force inline check of logging level */
-#define caml_gc_log(MSG, ...) \
-  do { \
-    if ((caml_params->verb_gc & 0x800) != 0) { \
-      caml_gc_log_internal((MSG), ##__VA_ARGS__); \
-    } \
-  } while(0)
-
 #define caml_gc_message(LVL, MSG, ...) \
   do { \
-    if ((caml_params->verb_gc & (LVL)) != 0) { \
+    if ((*caml_verb_gc & (LVL)) != 0) { \
       caml_gc_message_internal((MSG), ##__VA_ARGS__); \
     }\
   } while(0)
+
+#define caml_gc_log(MSG, ...) caml_gc_message(0x800, MSG, ##__VA_ARGS__)
 
 /* Runtime warnings */
 extern uintnat caml_runtime_warnings;
