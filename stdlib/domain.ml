@@ -104,7 +104,7 @@ let join { domain ; state } =
   (* Wait until the domain has terminated.
      The domain is in a critical section which will be
      ended by the runtime when it terminates *)
-  Sync.notify domain;
+  Raw.interrupt domain;
   match res with
   | Ok x -> x
   | Error ex -> raise ex
