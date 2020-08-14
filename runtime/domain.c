@@ -53,6 +53,16 @@
    with OS-level threads, called "domains".
 */
 
+struct interrupt {
+  /* immutable fields */
+  domain_rpc_handler handler;
+  void* data;
+
+  atomic_uintnat acknowledged;
+
+  /* accessed only when target's lock held */
+  struct interrupt* next;
+};
 
 /* control of interrupts */
 struct interruptor {
@@ -68,6 +78,8 @@ struct interruptor {
   /* Queue of domains trying to send interrupts here */
   struct interrupt* qhead;
   struct interrupt* qtail;      /* defined only when qhead != NULL */
+
+  struct interrupt async_interrupt_req;
 
   /* Next pointer for wait queues.
      Touched only when the queue is locked */
@@ -117,17 +129,6 @@ static uintnat minor_heaps_base;
 static __thread dom_internal* domain_self;
 
 static int64_t startup_timestamp;
-
-struct interrupt {
-  /* immutable fields */
-  domain_rpc_handler handler;
-  void* data;
-
-  atomic_uintnat acknowledged;
-
-  /* accessed only when target's lock held */
-  struct interrupt* next;
-};
 
 #ifdef __APPLE__
 /* OSX has issues with dynamic loading + exported TLS.
@@ -232,6 +233,7 @@ static void create_domain(uintnat initial_minor_heap_wsize) {
         s->interrupt_word = young_limit;
       }
       Assert(s->qhead == NULL);
+      Assert(s->async_interrupt_req.acknowledged == 1);
       s->running = 1;
       atomic_fetch_add(&caml_num_domains_running, 1);
     }
@@ -341,6 +343,7 @@ void caml_init_domains(uintnat minor_heap_wsz) {
     dom->interruptor.running = 0;
     dom->interruptor.terminating = 0;
     dom->interruptor.unique_id = i;
+    dom->interruptor.async_interrupt_req.acknowledged = 1;
     dom->id = i;
 
     caml_plat_mutex_init(&dom->domain_lock);
@@ -1360,9 +1363,9 @@ CAMLprim value caml_ml_domain_yield(value unused)
   return Val_unit;
 }
 
-static void handle_ml_interrupt(struct domain* d, void* unique_id_p, interrupt* req)
+static void handle_ml_interrupt(struct domain* d, void* unique_id, interrupt* req)
 {
-  if (d->internals->interruptor.unique_id != *(uintnat*)unique_id_p) {
+  if (d->internals->interruptor.unique_id != (uintnat)unique_id) {
     caml_acknowledge_interrupt(req);
     return;
   }
@@ -1382,10 +1385,31 @@ CAMLprim value caml_ml_domain_interrupt(value domain)
     &all_domains[unique_id % Max_domains].interruptor;
 
   caml_ev_begin("domain/send_interrupt");
-  if (!caml_send_interrupt(&domain_self->interruptor, target, &handle_ml_interrupt, &unique_id)) {
+  if (!caml_send_interrupt(&domain_self->interruptor, target, &handle_ml_interrupt, (void*)unique_id)) {
     /* the domain might have terminated, but that's fine */
   }
   caml_ev_end("domain/send_interrupt");
+
+  CAMLreturn (Val_unit);
+}
+
+CAMLprim value caml_ml_domain_async_interrupt(value domain)
+{
+  CAMLparam1 (domain);
+  uintnat unique_id = (uintnat)Long_val(domain);
+  struct interruptor* target =
+    &all_domains[unique_id % Max_domains].interruptor;
+
+  if (unique_id == target->unique_id) {
+    caml_ev_begin("domain/send_async_interrupt");
+    uintnat old = 1, new = 0;
+    if (atomic_compare_exchange_strong(&target->async_interrupt_req.acknowledged, &old, new)) {
+      /* we claimed the async notify and there must not be another pending */
+      caml_send_partial_interrupt(target, &handle_ml_interrupt, (void*)unique_id, &target->async_interrupt_req);
+    }
+
+    caml_ev_end("domain/send_async_interrupt");
+  }
 
   CAMLreturn (Val_unit);
 }

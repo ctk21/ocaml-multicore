@@ -5,6 +5,8 @@ module Raw = struct
     = "caml_ml_domain_critical_section"
   external interrupt : t -> unit
     = "caml_ml_domain_interrupt"
+  external async_interrupt : t -> unit
+    = "caml_ml_domain_async_interrupt"
   external wait : unit -> unit
     = "caml_ml_domain_yield"
   type timeout_or_notified = Timeout | Notified
@@ -31,7 +33,7 @@ module Sync = struct
     | exception Retry -> Raw.critical_adjust (-1); Raw.cpu_relax (); critical_section f
     | exception ex -> Raw.critical_adjust (-1); raise ex
 
-  let notify d = Raw.interrupt d
+  let notify d = Raw.async_interrupt d
   let wait () = Raw.wait ()
   type timeout_or_notified =
     Raw.timeout_or_notified =
