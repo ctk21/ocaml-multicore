@@ -946,6 +946,10 @@ CAMLexport void caml_leave_blocking_section() {
 
   Assert(caml_domain_alone() || self->backup_thread_running);
 
+  if (self->backup_thread_running) {
+    atomic_store_rel(&self->backup_thread_msg, BT_ENTERING_OCAML);
+  }
+
   caml_plat_lock(&self->domain_lock);
   caml_leave_blocking_section_hook();
   caml_process_pending_signals();
