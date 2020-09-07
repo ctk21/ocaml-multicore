@@ -964,10 +964,13 @@ CAMLexport void caml_enter_blocking_section() {
   caml_enter_blocking_section_hook();
   if (self->backup_thread_running) {
     atomic_store_rel(&self->backup_thread_msg, BT_IN_BLOCKING_SECTION);
+  }
+  caml_plat_unlock(&self->domain_lock);
+
+  if (self->backup_thread_running) {
     /* Wakeup backup thread if it is sleeping */
     caml_plat_signal(&self->domain_cond);
   }
-  caml_plat_unlock(&self->domain_lock);
 }
 
 void caml_print_stats () {
@@ -1313,8 +1316,8 @@ int caml_send_partial_interrupt(
   }
   /* Signal the condition variable, in case the target is
      itself waiting for an interrupt to be processed elsewhere */
-  caml_plat_broadcast(&target->cond); // OPT before/after unlock? elide?
   caml_plat_unlock(&target->lock);
+  caml_plat_broadcast(&target->cond); // OPT before/after unlock? elide?
 
   atomic_store_rel(target->interrupt_word, INTERRUPT_MAGIC); //FIXME dup
 
