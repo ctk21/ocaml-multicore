@@ -433,6 +433,7 @@ static void* backup_thread_func(void* v)
         cpu_relax();
         break;
     };
+    caml_plat_yield();
     msg = atomic_load_acq (&di->backup_thread_msg);
   }
 

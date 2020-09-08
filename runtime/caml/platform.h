@@ -32,6 +32,10 @@ INLINE void cpu_relax() {
 #endif
 }
 
+INLINE void caml_plat_yield() {
+  sched_yield();
+}
+
 INLINE uintnat atomic_load_acq(atomic_uintnat* p) {
   return atomic_load_explicit(p, memory_order_acquire);
 }
