@@ -404,7 +404,9 @@ static void* backup_thread_func(void* v)
          */
         if (caml_incoming_interrupts_queued()) {
           if (caml_plat_try_lock(&di->domain_lock)) {
+            caml_ev_begin("backup/interrupt");
             caml_handle_incoming_interrupts();
+            caml_ev_end("backup/interrupt");
             caml_plat_unlock(&di->domain_lock);
           }
         }
@@ -1538,12 +1540,20 @@ CAMLprim value caml_mutex_lock (value wrapper)
 
   m = Mutex_val(wrapper);
   /* first try to acquire mutex without releasing the master lock */
-  if (caml_plat_try_lock(m)) return Val_unit;
+  caml_ev_begin("mutex_lock");
+  if (caml_plat_try_lock(m)) {
+    caml_ev_end("mutex_lock");
+    return Val_unit;
+  }
+  caml_ev_end("mutex_lock");
+
   /* If unsuccessful, block on mutex */
   Begin_root(wrapper); /* prevent the deallocation of mutex */
+    caml_ev_begin("blocking/mutex_lock");
     caml_enter_blocking_section();
     caml_plat_lock(m);
     caml_leave_blocking_section();
+    caml_ev_end("blocking/mutex_lock");
   End_roots();
   return Val_unit;
 }
@@ -1551,7 +1561,9 @@ CAMLprim value caml_mutex_lock (value wrapper)
 CAMLprim value caml_mutex_unlock (value wrapper)
 {
   caml_plat_mutex* m = Mutex_val(wrapper);
+  caml_ev_begin("mutex_unlock");
   caml_plat_unlock(m);
+  caml_ev_end("mutex_unlock");
   return Val_unit;
 }
 
@@ -1615,7 +1627,9 @@ CAMLprim value caml_condition_new (value mutex_wrapper)
 CAMLprim value caml_condition_signal (value wrapper)
 {
   caml_plat_cond* c = Condition_val(wrapper);
+  caml_ev_begin("condition_signal");
   caml_plat_signal(c);
+  caml_ev_end("condition_signal");
   return Val_unit;
 }
 
@@ -1630,8 +1644,10 @@ CAMLprim value caml_condition_wait (value wrapper)
 {
   CAMLparam1(wrapper);
   caml_plat_cond* c = Condition_val(wrapper);
+  caml_ev_begin("condition_wait");
   caml_enter_blocking_section();
   caml_plat_wait(c);
   caml_leave_blocking_section();
+  caml_ev_end("condition_wait");
   CAMLreturn (Val_unit);
 }

@@ -44,7 +44,7 @@ static struct evbuf_list_node evbuf_head =
 static FILE* output;
 static Pi64_t startup_timestamp;
 
-#define EVENT_BUF_SIZE 32768
+#define EVENT_BUF_SIZE 262144
 struct event_buffer {
   struct evbuf_list_node list;
   uintnat ev_flushed;
