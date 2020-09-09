@@ -767,15 +767,18 @@ int caml_try_run_on_all_domains_with_spin_work(
   /* Try to take the lock by setting ourselves as the stw_leader.
      If it fails, handle interrupts (probably participating in
      an STW section) and return. */
+  caml_ev_begin("stw/leader_claim");
   caml_plat_lock(&all_domains_lock);
   if (atomic_load_acq(&stw_leader)) {
     caml_plat_unlock(&all_domains_lock);
     caml_handle_incoming_interrupts();
+    caml_ev_end("stw/leader_claim");
     return 0;
   } else {
     atomic_store_rel(&stw_leader, (uintnat)domain_self);
   }
   caml_plat_unlock(&all_domains_lock);
+  caml_ev_end("stw/leader_claim");
 
   caml_ev_begin("stw/leader");
   caml_gc_log("causing STW");
