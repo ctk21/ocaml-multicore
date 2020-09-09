@@ -397,12 +397,11 @@ static void* backup_thread_func(void* v)
          *  - must hold domain_lock to handle interrupts
          */
         if (caml_incoming_interrupts_queued()) {
-          if(caml_plat_try_lock(&di->domain_lock)) {
-            caml_ev_begin("backup/interrupt");
-            caml_handle_incoming_interrupts();
-            caml_ev_end("backup/interrupt");
-            caml_plat_unlock(&di->domain_lock);
-          }
+          caml_plat_lock(&di->domain_lock);
+          caml_ev_begin("backup/interrupt");
+          caml_handle_incoming_interrupts();
+          caml_ev_end("backup/interrupt");
+          caml_plat_unlock(&di->domain_lock);
         }
 
         /* intentional fall through */
@@ -1280,6 +1279,8 @@ int caml_send_partial_interrupt(
                          void* data,
                          struct interrupt* req)
 {
+  caml_plat_cond* target_cond;
+
   req->handler = handler;
   req->data = data;
   atomic_store_rel(&req->acknowledged, 0);
@@ -1303,12 +1304,11 @@ int caml_send_partial_interrupt(
   }
   /* Signal the condition variable, in case the target is
      itself waiting for an interrupt to be processed elsewhere */
-  if (target->backup_thread_msg == BT_IN_BLOCKING_SECTION) {
-    caml_plat_signal(&target->backup_cond);
-  } else {
-    caml_plat_signal(&target->cond);
-  }
+  target_cond = target->backup_thread_msg == BT_IN_BLOCKING_SECTION
+    ? &target->backup_cond
+    : &target->cond;
   caml_plat_unlock(&target->lock);
+  caml_plat_signal(target_cond);
 
   atomic_store_rel(target->interrupt_word, INTERRUPT_MAGIC); //FIXME dup
 
