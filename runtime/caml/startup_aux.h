@@ -49,6 +49,8 @@ struct caml_params {
   uintnat init_custom_minor_ratio;
   uintnat init_custom_minor_max_bsz;
 
+  uintnat init_opportunistic_work_chunk_sz;
+
   uintnat init_max_stack_wsz;
   uintnat init_fiber_wsz;
 

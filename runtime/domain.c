@@ -1353,8 +1353,6 @@ CAMLprim value caml_ml_domain_critical_section(value delta)
   return Val_unit;
 }
 
-#define Chunk_size 0x400
-
 CAMLprim value caml_ml_domain_yield(value unused)
 {
   struct interruptor* s = &domain_self->interruptor;
@@ -1375,8 +1373,8 @@ CAMLprim value caml_ml_domain_yield(value unused)
       caml_ev_end("domain/idle_wait");
     } else {
       caml_plat_unlock(&s->lock);
-      left = caml_opportunistic_major_collection_slice(Chunk_size);
-      if (left == Chunk_size)
+      left = caml_opportunistic_major_collection_slice();
+      if (left == caml_opportunistic_work_chunk_sz)
         found_work = 0;
       caml_plat_lock(&s->lock);
     }
@@ -1457,8 +1455,8 @@ CAMLprim value caml_ml_domain_yield_until(value t)
       }
     } else {
       caml_plat_unlock(&s->lock);
-      left = caml_opportunistic_major_collection_slice(Chunk_size);
-      if (left == Chunk_size)
+      left = caml_opportunistic_major_collection_slice();
+      if (left == caml_opportunistic_work_chunk_sz)
         found_work = 0;
       caml_plat_lock(&s->lock);
     }

@@ -38,8 +38,9 @@ static inline char caml_gc_phase_char(gc_phase_t phase) {
   }
 }
 
+extern uintnat caml_opportunistic_work_chunk_sz;
 intnat caml_opportunistic_major_work_available ();
-intnat caml_opportunistic_major_collection_slice (intnat);
+intnat caml_opportunistic_major_collection_slice ();
 /* auto-triggered slice from within the GC */
 #define AUTO_TRIGGERED_MAJOR_SLICE -1
 /* external triggered slice, but GC will compute the amount of work */

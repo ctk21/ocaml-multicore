@@ -1243,9 +1243,14 @@ mark_again:
   return budget;
 }
 
-intnat caml_opportunistic_major_collection_slice(intnat howmuch)
+uintnat caml_opportunistic_work_chunk_sz = 0;
+
+intnat caml_opportunistic_major_collection_slice()
 {
-  return major_collection_slice(howmuch, 0, 0, Slice_opportunistic);
+  if (caml_opportunistic_work_chunk_sz > 0) {
+    return major_collection_slice(caml_opportunistic_work_chunk_sz, 0, 0, Slice_opportunistic);
+  }
+  return 0;
 }
 
 intnat caml_major_collection_slice(intnat howmuch)

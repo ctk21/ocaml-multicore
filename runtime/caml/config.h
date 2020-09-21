@@ -281,4 +281,7 @@ typedef uint64_t uintnat;
    Documented in gc.mli */
 #define Custom_minor_max_bsz_def 8192
 
+/* Default setting for opportunistic mark and sweep work budget size */
+#define Opportunistic_work_chunk_sz_def 0x200
+
 #endif /* CAML_CONFIG_H */

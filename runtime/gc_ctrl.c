@@ -51,6 +51,7 @@ extern uintnat caml_allocation_policy;    /*        see freelist.c */
 extern uintnat caml_custom_major_ratio;   /* see custom.c */
 extern uintnat caml_custom_minor_ratio;   /* see custom.c */
 extern uintnat caml_custom_minor_max_bsz; /* see custom.c */
+extern uintnat caml_opportunistic_work_chunk; /* see major_gc.c */
 
 CAMLprim value caml_gc_quick_stat(value v)
 {
@@ -292,6 +293,8 @@ void caml_init_gc ()
   caml_custom_minor_ratio =
       norm_custom_min (caml_params->init_custom_minor_ratio);
   caml_custom_minor_max_bsz = caml_params->init_custom_minor_max_bsz;
+
+  caml_opportunistic_work_chunk_sz = caml_params->init_opportunistic_work_chunk_sz;
 
   caml_setup_eventlog();
   caml_gc_phase = Phase_sweep_and_mark_main;

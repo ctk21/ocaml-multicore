@@ -57,6 +57,7 @@ static void init_startup_params()
   params.init_custom_major_ratio = Custom_major_ratio_def;
   params.init_custom_minor_ratio = Custom_minor_ratio_def;
   params.init_custom_minor_max_bsz = Custom_minor_max_bsz_def;
+  params.init_opportunistic_work_chunk_sz = Opportunistic_work_chunk_sz_def;
   params.init_max_stack_wsz = Max_stack_def;
   params.init_fiber_wsz = (Stack_threshold * 2) / sizeof(value);
 #ifdef DEBUG
@@ -115,6 +116,7 @@ void caml_parse_ocamlrunparam(void)
       case 's': scanmult (opt, &params.init_minor_heap_wsz); break;
       case 'S': scanmult (opt, &params.print_stats); break;
       case 't': scanmult (opt, &params.trace_level); break;
+      case 'u': scanmult (opt, &params.init_opportunistic_work_chunk_sz); break;
       case 'v': scanmult (opt, &params.verb_gc); break;
       case 'V': scanmult (opt, &params.verify_heap); break;
       //case 'w': scanmult (opt, &caml_init_major_window); break;
