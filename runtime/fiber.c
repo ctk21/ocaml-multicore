@@ -298,14 +298,16 @@ int caml_try_realloc_stack(asize_t required_space)
     size *= 2;
   } while (size < stack_used + required_space);
 #endif
-  if (size > 4096 / sizeof(value)) {
-    caml_gc_log ("Growing stack to %"
-                 ARCH_INTNAT_PRINTF_FORMAT "uk bytes",
-                 (uintnat) size * sizeof(value) / 1024);
-  } else {
-    caml_gc_log ("Growing stack to %"
-                 ARCH_INTNAT_PRINTF_FORMAT "u bytes",
-                 (uintnat) size * sizeof(value));
+  if (caml_params->verb_gc & 0x800) {
+    if (size > 4096 / sizeof(value)) {
+      caml_gc_log ("Growing stack to %"
+                   ARCH_INTNAT_PRINTF_FORMAT "uk bytes",
+                   (uintnat) size * sizeof(value) / 1024);
+    } else {
+      caml_gc_log ("Growing stack to %"
+                   ARCH_INTNAT_PRINTF_FORMAT "u bytes",
+                   (uintnat) size * sizeof(value));
+    }
   }
 
   new_stack = alloc_stack_noexc(size,
