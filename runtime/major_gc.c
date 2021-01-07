@@ -504,7 +504,7 @@ static void realloc_mark_stack (struct mark_stack* stk)
   mark_stack_prune(stk);
 }
 
-static void mark_stack_push(struct mark_stack* stk, value block, 
+static void mark_stack_push(struct mark_stack* stk, value block,
       uintnat offset, intnat* work)
 {
   value v;
@@ -515,6 +515,12 @@ static void mark_stack_push(struct mark_stack* stk, value block,
   CAMLassert(Tag_val(block) != Infix_tag);
   CAMLassert(Tag_val(block) < No_scan_tag);
   CAMLassert(Tag_val(block) != Cont_tag);
+
+#ifdef DEBUG
+  for (i = 0; i < block_wsz; i++) {
+    CAMLassert(Field(block, i) != Debug_free_major);
+  }
+#endif
 
   /* Optimisation to avoid pushing small, unmarkable objects such as [Some 42]
    * into the mark stack. */
@@ -602,28 +608,27 @@ static void mark_slice_darken(struct mark_stack* stk, value v, mlsize_t i,
       if (Tag_hd(chd) == Cont_tag){
         caml_darken_cont(child);
         *work -= Wosize_hd(chd);
-      } else{
-    again:
-      if (Tag_hd(chd) == Lazy_tag || Tag_hd(chd) == Forcing_tag){
-        if(!atomic_compare_exchange_strong(Hp_atomic_val(child), &chd,
-              With_status_hd(chd, global.MARKED))){
-                chd = Hd_val(child);
-                goto again;
-              }
       } else {
-        atomic_store_explicit(
-          Hp_atomic_val(child),
-          With_status_hd(chd, global.MARKED),
-          memory_order_relaxed);
-      }
-      if(Tag_hd(chd) < No_scan_tag){
-        mark_stack_push(stk, child, 0, work);
-      }
-      else{
-        *work -= Wosize_hd(chd); /* account for header */
+    again:
+        if (Tag_hd(chd) == Lazy_tag || Tag_hd(chd) == Forcing_tag){
+          if(!atomic_compare_exchange_strong(Hp_atomic_val(child), &chd,
+                With_status_hd(chd, global.MARKED))){
+                  chd = Hd_val(child);
+                  goto again;
+                }
+        } else {
+          atomic_store_explicit(
+            Hp_atomic_val(child),
+            With_status_hd(chd, global.MARKED),
+            memory_order_relaxed);
+        }
+        if(Tag_hd(chd) < No_scan_tag){
+          mark_stack_push(stk, child, 0, work);
+        } else {
+          *work -= Wosize_hd(chd); /* account for header */
+        }
       }
     }
-  }
   }
 }
 
@@ -1402,7 +1407,7 @@ static void mark_stack_prune (struct mark_stack* stk)
       mark_stack[large_idx++] = me;
       continue;
     }
-    caml_skiplist_insert(&chunk_sklist, (uintnat)pool, 
+    caml_skiplist_insert(&chunk_sklist, (uintnat)pool,
     (uintnat)pool + sizeof(pool));
   }
 
@@ -1417,7 +1422,7 @@ static void mark_stack_prune (struct mark_stack* stk)
   });
 
   caml_gc_log("Mark stack overflow. Postponing %d pools", Caml_state->pools_to_rescan_count);
-  
+
   stk->count = large_idx;
 }
 
