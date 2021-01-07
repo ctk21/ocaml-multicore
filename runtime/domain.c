@@ -186,7 +186,10 @@ int caml_reallocate_minor_heap(asize_t wsize)
   {
     uintnat* p = (uintnat*)domain_self->minor_heap_area;
     for (; p < (uintnat*)(domain_self->minor_heap_area + Bsize_wsize(wsize)); p++)
+    {
       *p = Debug_uninit_align;
+      Assert(Is_young((value)p));
+    }
   }
 #endif
 
