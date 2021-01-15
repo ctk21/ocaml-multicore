@@ -6,7 +6,7 @@ include unix
 *)
 
 let percent_finalize = try int_of_string Sys.argv.(1) with _ -> 50
-let iterations = try int_of_string Sys.argv.(2) with _ -> 1000
+let iterations = try int_of_string Sys.argv.(2) with _ -> 200
 let num_domains = try int_of_string Sys.argv.(3) with _ -> 4
 
 type 'a tree = Empty | Node of 'a tree * 'a tree
@@ -17,13 +17,12 @@ let rec make d =
 
 let rec check = function Empty -> 0 | Node(l, r) -> 1 + check l + check r
 
-let () = Random.init 42
-let n = 10
+let n = 9
 
 let allocate () =
-  for _ = 0 to 1000 do
+  for i = 0 to 1000 do
     let v = make n in
-    if Random.int 100 < percent_finalize then
+    if i mod 2 == 0 then
       Gc.finalise (fun v -> ignore @@ check v) v
     else
       ignore @@ check v
