@@ -634,7 +634,17 @@ void caml_empty_minor_heap_promote (struct domain* domain, int participating_cou
       }
     }
   }
-  caml_final_do_young_roots (&oldify_one, &st, domain, 0);
+
+  /* if we are not alone, we mark all last values with finalisers
+    attached since we can not scan without an additional barrier.
+    The problem is that a domain could have a finaliser attached to
+    a value that is kept alive in another domain, we would have to
+    wait for that domain to complete its marking to scan it.
+
+    When we are alone we can scan safely after alive objects in
+    the minor heap are promoted
+ */
+  caml_final_do_young_roots (&oldify_one, &st, domain, not_alone);
   caml_ev_end("minor_gc/finalizers/oldify");
 
   caml_ev_begin("minor_gc/remembered_set/promote");
@@ -642,11 +652,6 @@ void caml_empty_minor_heap_promote (struct domain* domain, int participating_cou
   caml_ev_end("minor_gc/remembered_set/promote");
   caml_ev_end("minor_gc/remembered_set");
   caml_gc_log("promoted %d roots, %lu bytes", remembered_roots, st.live_bytes);
-
-  caml_ev_begin("minor_gc/finalizers_admin");
-  caml_gc_log("running stw minor_heap_domain_finalizers_admin");
-  caml_minor_heap_domain_finalizers_admin(domain, 0);
-  caml_ev_end("minor_gc/finalizers_admin");
 
 #ifdef DEBUG
   caml_global_barrier();
@@ -671,6 +676,12 @@ void caml_empty_minor_heap_promote (struct domain* domain, int participating_cou
   oldify_mopup (&st, 0);
   caml_ev_end("minor_gc/local_roots/promote");
   caml_ev_end("minor_gc/local_roots");
+
+  /* sweep to check if any finalisers need running  */
+  caml_ev_begin("minor_gc/finalizers_admin");
+  caml_gc_log("running stw minor_heap_domain_finalizers_admin");
+  caml_minor_heap_domain_finalizers_admin(domain, 0);
+  caml_ev_end("minor_gc/finalizers_admin");
 
   /* we reset these pointers before allowing any mutators to be
      released to avoid races where another domain signals an interrupt
