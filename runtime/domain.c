@@ -97,8 +97,7 @@ struct dom_internal {
   caml_plat_cond domain_cond;
 
   /* readonly */
-  uintnat tls_area;
-  uintnat tls_area_end;
+  void* tls_area;
 };
 typedef struct dom_internal dom_internal;
 
@@ -115,7 +114,6 @@ CAMLexport uintnat caml_global_minor_heap_start;
 CAMLexport uintnat caml_global_minor_heap_limit;
 CAMLexport atomic_uintnat caml_global_minor_heap_ptr;
 
-CAMLexport uintnat caml_tls_areas_base;
 static __thread dom_internal* domain_self;
 
 static int64_t startup_timestamp;
@@ -187,14 +185,22 @@ static void create_domain() {
       if (!d->interrupt_word_address) {
         caml_domain_state* domain_state;
         atomic_uintnat* young_limit;
-        /* never been started before, so set up minor heap */
-        if (!caml_mem_commit((void*)d->tls_area, (d->tls_area_end - d->tls_area))) {
+        uintnat tls_size;
+        /* never been started before, so set up tls_area and minor heap */
+        Assert(d->tls_area == NULL);
+        tls_size = caml_mem_round_up_pages(sizeof(caml_domain_state));
+        /* add a page to ensure we can align what comes back at a page boundary */
+        d->tls_area = caml_stat_alloc_noexc(tls_size + caml_mem_round_up_pages(1));
+        if (!d->tls_area) {
           /* give up now: if we couldn't get memory for this domain, we're
              unlikely to have better luck with any other */
           d = 0;
           caml_plat_unlock(&s->lock);
           break;
         }
+        /* make sure tls_area is page aligned */
+        d->tls_area = (void*)caml_mem_round_up_pages((uintnat)d->tls_area);
+        memset(d->tls_area, 0, tls_size);
       	domain_state = (caml_domain_state*)(d->tls_area);
         young_limit = (atomic_uintnat*)&domain_state->young_limit;
         d->interrupt_word_address = young_limit;
@@ -337,10 +343,7 @@ void caml_reset_young_fields(void) {
 void caml_init_domains(uintnat init_minor_heap_wsz) {
   int i;
   uintnat size;
-  uintnat tls_size;
-  uintnat tls_areas_size;
   void* heaps_base;
-  void* tls_base;
 
   global_minor_heap_wsz_per_domain = init_minor_heap_wsz;
 
@@ -352,17 +355,11 @@ void caml_init_domains(uintnat init_minor_heap_wsz) {
     caml_fatal_error("Configured minor heap size (%ld) is bigger than the allowed maximum (%ld)",
 		     global_minor_heap_wsz_per_domain, (uintnat) Minor_heap_max);
 
-  /* reserve memory space for minor heaps and tls_areas */
+  /* reserve memory space for minor heaps */
   size = (uintnat)Bsize_wsize(Minor_heap_max) * Max_domains;
 
-  tls_size = caml_mem_round_up_pages(sizeof(caml_domain_state));
-  tls_areas_size = tls_size * Max_domains;
-
   heaps_base = caml_mem_map(size, size, 1 /* reserve_only */);
-  tls_base = caml_mem_map(tls_areas_size, tls_areas_size, 1 /* reserve_only */);
-
-  if (!heaps_base || !tls_base) caml_raise_out_of_memory();
-
+  if (!heaps_base ) caml_raise_out_of_memory();
 
   // We should commit some space for at least one domain though
   if( !caml_mem_commit(heaps_base, Bsize_wsize(global_minor_heap_wsz_per_domain)) ) {
@@ -373,11 +370,9 @@ void caml_init_domains(uintnat init_minor_heap_wsz) {
   // Our initial limit is just for one domain
   caml_global_minor_heap_limit = (uintnat) heaps_base + Bsize_wsize(global_minor_heap_wsz_per_domain);
   caml_global_minor_heap_ptr = (uintnat) heaps_base;
-  caml_tls_areas_base = (uintnat) tls_base;
 
   for (i = 0; i < Max_domains; i++) {
     struct dom_internal* dom = &all_domains[i];
-    uintnat domain_tls_base;
 
     caml_plat_mutex_init(&dom->interruptor.lock);
     caml_plat_cond_init(&dom->interruptor.cond,
@@ -393,9 +388,7 @@ void caml_init_domains(uintnat init_minor_heap_wsz) {
     dom->backup_thread_running = 0;
     dom->backup_thread_msg = BT_INIT;
 
-    domain_tls_base = caml_tls_areas_base + tls_size * (uintnat)i;
-    dom->tls_area = domain_tls_base;
-    dom->tls_area_end = domain_tls_base + tls_size;
+    dom->tls_area = NULL;
   }
 
   create_domain();
