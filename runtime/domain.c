@@ -355,20 +355,14 @@ void caml_init_domains(uintnat init_minor_heap_wsz) {
     caml_fatal_error("Configured minor heap size (%ld) is bigger than the allowed maximum (%ld)",
 		     global_minor_heap_wsz_per_domain, (uintnat) Minor_heap_max);
 
-  /* reserve memory space for minor heaps */
-  size = (uintnat)Bsize_wsize(Minor_heap_max) * Max_domains;
+  /* allocate memory space for a minor heap */
+  size = (uintnat)Bsize_wsize(global_minor_heap_wsz_per_domain);
 
-  heaps_base = caml_mem_map(size, size, 1 /* reserve_only */);
+  heaps_base = caml_stat_alloc_noexc(size);
   if (!heaps_base ) caml_raise_out_of_memory();
 
-  // We should commit some space for at least one domain though
-  if( !caml_mem_commit(heaps_base, Bsize_wsize(global_minor_heap_wsz_per_domain)) ) {
-    caml_raise_out_of_memory();
-  }
-
   caml_global_minor_heap_start = (uintnat) heaps_base;
-  // Our initial limit is just for one domain
-  caml_global_minor_heap_limit = (uintnat) heaps_base + Bsize_wsize(global_minor_heap_wsz_per_domain);
+  caml_global_minor_heap_limit = (uintnat) heaps_base + size;
   caml_global_minor_heap_ptr = (uintnat) heaps_base;
 
   for (i = 0; i < Max_domains; i++) {

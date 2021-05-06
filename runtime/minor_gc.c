@@ -538,9 +538,20 @@ void caml_adjust_global_minor_heap(int participating_domains) {
   CAMLassert(new_global_minor_heap_size < ((uintnat)Bsize_wsize(Minor_heap_max) * Max_domains));
 
   if( global_minor_heap_size != new_global_minor_heap_size ) {
-    caml_mem_decommit((char*)caml_global_minor_heap_start, global_minor_heap_size);
-    caml_mem_commit((char*)caml_global_minor_heap_start, new_global_minor_heap_size);
+    caml_stat_block new_heap;
 
+    caml_gc_log("Reallocating global minor heap: participating: %d:"
+        "  old_bsz: %"ARCH_INTNAT_PRINTF_FORMAT"u"
+        "  new_bsz: %"ARCH_INTNAT_PRINTF_FORMAT"u",
+        participating_domains, global_minor_heap_size, new_global_minor_heap_size);
+
+    new_heap = caml_stat_resize_noexc((void*)caml_global_minor_heap_start, new_global_minor_heap_size);
+
+    if(new_heap == NULL) {
+      caml_fatal_error("Failed to allocate global minor heap (%"ARCH_INTNAT_PRINTF_FORMAT"u bytes)", new_global_minor_heap_size);
+    }
+
+    caml_global_minor_heap_start = (uintnat)new_heap;
     caml_global_minor_heap_limit = caml_global_minor_heap_start + new_global_minor_heap_size;
   }
 
