@@ -145,12 +145,11 @@ static pool* pool_acquire(struct caml_heap_state* local) {
 
   caml_plat_lock(&pool_freelist.lock);
   if (!pool_freelist.free) {
-    void* mem = caml_mem_map(Bsize_wsize(POOL_WSIZE) * POOLS_PER_ALLOCATION,
-                              Bsize_wsize(POOL_WSIZE), 0 /* allocate */);
+    void* mem = (void*)caml_stat_alloc_noexc(
+                        Bsize_wsize(POOL_WSIZE) * POOLS_PER_ALLOCATION);
     int i;
     if (mem) {
-      pool_freelist.free = mem;
-      for (i=1; i<POOLS_PER_ALLOCATION; i++) {
+      for (i=0; i<POOLS_PER_ALLOCATION; i++) {
         r = (pool*)(((uintnat)mem) + ((uintnat)i) * Bsize_wsize(POOL_WSIZE));
         r->next = pool_freelist.free;
         r->owner = 0;
