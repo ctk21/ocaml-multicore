@@ -537,12 +537,11 @@ void caml_adjust_global_minor_heap(int participating_domains) {
 
   CAMLassert(new_global_minor_heap_size < ((uintnat)Bsize_wsize(Minor_heap_max) * Max_domains));
 
-  if( global_minor_heap_size != new_global_minor_heap_size ) {
-    caml_mem_decommit((char*)caml_global_minor_heap_start, global_minor_heap_size);
-    caml_mem_commit((char*)caml_global_minor_heap_start, new_global_minor_heap_size);
+  caml_mem_decommit((char*)caml_global_minor_heap_start, global_minor_heap_size);
+  /* TODO: I think this works even when you haven't committed
+     the whole global_minor_heap_size */
 
-    caml_global_minor_heap_limit = caml_global_minor_heap_start + new_global_minor_heap_size;
-  }
+  caml_global_minor_heap_limit = caml_global_minor_heap_start + new_global_minor_heap_size;
 
   atomic_store_explicit(&caml_global_minor_heap_ptr,
             caml_global_minor_heap_start,
@@ -587,6 +586,9 @@ int caml_replenish_minor_heap()
       break;
     };
   }
+
+  // commit the area
+  caml_mem_commit((char*)cached_global_minor_heap_ptr, minor_buffer_bsize);
 
   // before we trample over our current buffer, record how much we've allocated
   domain_state->stat_minor_words += Wsize_bsize (domain_state->young_end - domain_state->young_ptr);

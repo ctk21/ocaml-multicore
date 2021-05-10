@@ -363,15 +363,9 @@ void caml_init_domains(uintnat init_minor_heap_wsz) {
 
   if (!heaps_base || !tls_base) caml_raise_out_of_memory();
 
-
-  // We should commit some space for at least one domain though
-  if( !caml_mem_commit(heaps_base, Bsize_wsize(global_minor_heap_wsz_per_domain)) ) {
-    caml_raise_out_of_memory();
-  }
-
+  /* start with null values which will fault and then we populate */
   caml_global_minor_heap_start = (uintnat) heaps_base;
-  // Our initial limit is just for one domain
-  caml_global_minor_heap_limit = (uintnat) heaps_base + Bsize_wsize(global_minor_heap_wsz_per_domain);
+  caml_global_minor_heap_limit = (uintnat) heaps_base;
   caml_global_minor_heap_ptr = (uintnat) heaps_base;
   caml_tls_areas_base = (uintnat) tls_base;
 
