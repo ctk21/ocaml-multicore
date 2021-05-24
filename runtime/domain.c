@@ -240,7 +240,6 @@ static void create_domain(uintnat initial_minor_heap_wsize) {
     domain_state->id = d->id;
     domain_state->unique_id = d->interruptor.unique_id;
     d->state.state = domain_state;
-    domain_state->critical_section_nesting = 0;
 
     if (caml_init_signal_stack() < 0) {
       goto init_signal_stack_failure;
@@ -741,12 +740,8 @@ static void decrement_stw_domains_still_processing()
 static void caml_poll_gc_work();
 static void stw_handler(struct domain* domain, void* unused2, interrupt* done)
 {
-#ifdef DEBUG
-  caml_domain_state* domain_state = Caml_state;
-#endif
-
   CAML_EV_BEGIN(EV_STW_HANDLER);
-  caml_acknowledge_interrupt(done);
+  atomic_store_rel(&done->acknowledged, 1);
   CAML_EV_BEGIN(EV_STW_API_BARRIER);
   {
     SPIN_WAIT {
@@ -761,11 +756,11 @@ static void stw_handler(struct domain* domain, void* unused2, interrupt* done)
   CAML_EV_END(EV_STW_API_BARRIER);
 
   #ifdef DEBUG
-  domain_state->inside_stw_handler = 1;
+  Caml_state->inside_stw_handler = 1;
   #endif
   stw_request.callback(domain, stw_request.data, stw_request.num_domains, stw_request.participating);
   #ifdef DEBUG
-  domain_state->inside_stw_handler = 0;
+  Caml_state->inside_stw_handler = 0;
   #endif
 
   decrement_stw_domains_still_processing();
@@ -781,9 +776,7 @@ static void stw_handler(struct domain* domain, void* unused2, interrupt* done)
 
 #ifdef DEBUG
 int caml_domain_is_in_stw() {
-  caml_domain_state* domain_state = Caml_state;
-
-  return domain_state->inside_stw_handler;
+  return Caml_state->inside_stw_handler;
 }
 #endif
 
@@ -938,8 +931,8 @@ static void caml_poll_gc_work()
     /* FIXME: a domain will only ever call finalizers if its minor
       heap triggers the minor collection
       Care may be needed with finalizers running when the domain
-      is waiting in a critical_section or in a blocking section
-      and serviced by the backup thread.
+      is waiting in a blocking section and serviced by the backup
+      thread.
       */
     CAML_EV_BEGIN(EV_MINOR_FINALIZED);
     caml_final_do_calls();
@@ -1122,21 +1115,6 @@ static uintnat handle_incoming(struct interruptor* s)
   return handled;
 }
 
-void caml_acknowledge_interrupt(struct interrupt* req)
-{
-  atomic_store_rel(&req->acknowledged, 1);
-}
-
-static void acknowledge_all_pending_interrupts()
-{
-  Assert(Caml_state->critical_section_nesting == 0);
-  while (Caml_state->pending_interrupts) {
-    interrupt* curr = Caml_state->pending_interrupts;
-    Caml_state->pending_interrupts = curr->next;
-    caml_acknowledge_interrupt(curr);
-  }
-}
-
 static void handover_ephemerons(caml_domain_state* domain_state)
 {
   if (domain_state->ephe_info->todo == 0 &&
@@ -1245,11 +1223,6 @@ static void domain_terminate(struct domain_ml_values* ml_values)
 
   if(domain_state->current_stack != NULL) {
     caml_free_stack(domain_state->current_stack);
-  }
-
-  if (Caml_state->critical_section_nesting) {
-    Caml_state->critical_section_nesting = 0;
-    acknowledge_all_pending_interrupts();
   }
 
   /* release domain blocked waiting to join this domain */
