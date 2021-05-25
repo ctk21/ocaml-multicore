@@ -592,6 +592,7 @@ CAMLprim value caml_domain_spawn(value callback, value mutex, value condition, v
   struct domain_startup_params p;
   pthread_t th;
   int err;
+  uintnat old_bt_msg = domain_self->backup_thread_msg;
 
   CAML_EV_BEGIN(EV_DOMAIN_SPAWN);
   p.parent = &domain_self->interruptor;
@@ -610,6 +611,8 @@ CAMLprim value caml_domain_spawn(value callback, value mutex, value condition, v
 
   /* while waiting for the child thread to startup
      we need to servicing any STW if they come in */
+  /* HACK: pretend we are in a blocking section   */
+  atomic_store_rel(&domain_self->backup_thread_msg, BT_IN_BLOCKING_SECTION);
   caml_plat_lock(&domain_self->interruptor.lock);
   while (p.status == Dom_starting) {
     if (caml_incoming_interrupts_queued()) {
@@ -620,6 +623,7 @@ CAMLprim value caml_domain_spawn(value callback, value mutex, value condition, v
       caml_plat_wait(&domain_self->interruptor.cond);
     }
   }
+  atomic_store_rel(&domain_self->backup_thread_msg, old_bt_msg);
   caml_plat_unlock(&domain_self->interruptor.lock);
 
   if (p.status == Dom_started) {
@@ -768,7 +772,7 @@ int caml_domain_is_in_stw() {
 }
 #endif
 
-static int caml_send_interrupt(struct interruptor* target);
+static int caml_send_interrupt(struct dom_internal* target);
 static void caml_wait_interrupt_serviced(struct interruptor* self, struct interruptor* target);
 
 int caml_try_run_on_all_domains_with_spin_work(
@@ -831,7 +835,7 @@ int caml_try_run_on_all_domains_with_spin_work(
         domains_participating++;
         continue;
       }
-      if (caml_send_interrupt(&all_domains[i].interruptor)) {
+      if (caml_send_interrupt(&all_domains[i])) {
         participating[domains_participating] = &all_domains[i].state;
         domains_participating++;
       }
@@ -1004,6 +1008,7 @@ CAMLexport void caml_bt_exit_ocaml(void)
     /* Wakeup backup thread if it is sleeping */
     caml_plat_signal(&self->domain_cond);
   }
+  caml_handle_incoming_interrupts();
 
   return;
 }
@@ -1259,23 +1264,25 @@ static void caml_wait_interrupt_serviced (struct interruptor* self,
   }
 }
 
-int caml_send_interrupt(struct interruptor* target)
+int caml_send_interrupt(struct dom_internal* target_dom)
 {
+  struct interruptor* target = &target_dom->interruptor;
+
   /* we have all_domains_lock so things will not move under us */
   if (!target->running) return 0;
-
-  caml_plat_lock(&target->lock);
 
   /* signal that there is an interrupt pending */
   Assert(!atomic_load_acq(&target->interrupt_pending));
   atomic_store_rel(&target->interrupt_pending, 1);
 
-  /* Signal the condition variable, in case the target is
-     itself waiting for an interrupt to be processed elsewhere */
-  caml_plat_broadcast(&target->cond); // OPT before/after unlock? elide?
-  caml_plat_unlock(&target->lock);
+  atomic_store_rel(target->interrupt_word, INTERRUPT_MAGIC);
 
-  atomic_store_rel(target->interrupt_word, INTERRUPT_MAGIC); //FIXME dup
+  /* Signal the condition variable if something waiting on it */
+  if( atomic_load_acq(&target_dom->backup_thread_msg) != BT_ENTERING_OCAML ) {
+    caml_plat_lock(&target->lock);
+    caml_plat_broadcast(&target->cond);
+    caml_plat_unlock(&target->lock);
+  }
 
   return 1;
 }
