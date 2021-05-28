@@ -185,7 +185,7 @@ static void spin_on_header(value v) {
 }
 
 static inline header_t get_header_val(value v) {
-  header_t hd = atomic_load_explicit(Hp_atomic_val(v), memory_order_relaxed);
+  header_t hd = atomic_load_explicit(Hp_atomic_val(v), memory_order_acquire);
   if (!Is_update_in_progress(hd))
     return hd;
 
@@ -197,42 +197,27 @@ header_t caml_get_header_val(value v) {
   return get_header_val(v);
 }
 
-static int try_update_object_header(value v, value *p, value result, mlsize_t infix_offset) {
-  int success = 0;
+static int try_update_object_header(header_t old_hdr, value v, value *p, value result, mlsize_t infix_offset) {
+  int success = 1;
 
   if( caml_domain_alone() ) {
     *Hp_val (v) = 0;
     Field(v, 0) = result;
-    success = 1;
   } else {
-    header_t hd = atomic_load(Hp_atomic_val(v));
-    if( hd == 0 ) {
-      // in this case this has been updated by another domain, throw away result
-      // and return the one in the object
-      result = Field(v, 0);
-    } else if( Is_update_in_progress(hd) ) {
-      // here we've caught a domain in the process of moving a minor heap object
-      // we need to wait for it to finish
-      spin_on_header(v);
-      // Also throw away result and use the one from the other domain
-      result = Field(v, 0);
+    header_t desired_hd = In_progress_update_val;
+    if( atomic_compare_exchange_strong(Hp_atomic_val(v), &old_hdr, desired_hd) ) {
+      // Success
+      // Now we can write the forwarding pointer
+      atomic_store_explicit(Op_atomic_val(v), result, memory_order_relaxed);
+      // And update header ('release' to ensure after update of fwd pointer)
+      atomic_store_explicit(Hp_atomic_val(v), 0, memory_order_release);
+      // Let the caller know we were responsible for the update
     } else {
-      // Here the header is neither zero nor an in-progress update
-      header_t desired_hd = In_progress_update_val;
-      if( atomic_compare_exchange_strong(Hp_atomic_val(v), &hd, desired_hd) ) {
-        // Success
-        // Now we can write the forwarding pointer
-        atomic_store_explicit(Op_atomic_val(v), result, memory_order_relaxed);
-        // And update header ('release' to ensure after update of fwd pointer)
-        atomic_store_explicit(Hp_atomic_val(v), 0, memory_order_release);
-        // Let the caller know we were responsible for the update
-        success = 1;
-      } else {
-        // We were sniped by another domain, spin for that to complete then
-        // throw away result and use the one from the other domain
-        spin_on_header(v);
-        result = Field(v, 0);
-      }
+      // We were sniped by another domain, spin for that to complete then
+      // throw away result and use the one from the other domain
+      spin_on_header(v);
+      result = Field(v, 0);
+      success = 0;
     }
   }
 
@@ -292,7 +277,7 @@ static void oldify_one (void* st_v, value v, value *p)
     value stack_value = Field(v, 0);
     CAMLassert(Wosize_hd(hd) == 1 && infix_offset == 0);
     result = alloc_shared(1, Cont_tag);
-    if( try_update_object_header(v, p, result, 0) ) {
+    if( try_update_object_header(hd, v, p, result, 0) ) {
       struct stack_info* stk = Ptr_val(stack_value);
       Field(result, 0) = Val_ptr(stk);
       if (stk != NULL) {
@@ -313,7 +298,7 @@ static void oldify_one (void* st_v, value v, value *p)
     st->live_bytes += Bhsize_hd(hd);
     result = alloc_shared (sz, tag);
     field0 = Field(v, 0);
-    if( try_update_object_header(v, p, result, infix_offset) ) {
+    if( try_update_object_header(hd, v, p, result, infix_offset) ) {
       if (sz > 1){
         Field(result, 0) = field0;
         Field(result, 1) = st->todo_list;
@@ -344,7 +329,7 @@ static void oldify_one (void* st_v, value v, value *p)
       Field(result, i) = Field(v, i);
     }
     CAMLassert (infix_offset == 0);
-    if( !try_update_object_header(v, p, result, 0) ) {
+    if( !try_update_object_header(hd, v, p, result, 0) ) {
       // Conflict
       *Hp_val(result) = Make_header(sz, No_scan_tag, global.MARKED);
       #ifdef DEBUG
@@ -371,7 +356,7 @@ static void oldify_one (void* st_v, value v, value *p)
       CAMLassert (Wosize_hd (hd) == 1);
       st->live_bytes += Bhsize_hd(hd);
       result = alloc_shared (1, Forward_tag);
-      if( try_update_object_header(v, p, result, 0) ) {
+      if( try_update_object_header(hd, v, p, result, 0) ) {
         p = Op_val (result);
         v = f;
         goto tail_call;
