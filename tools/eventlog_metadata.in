@@ -120,19 +120,15 @@ enum gc_phase : uint16_t {
     "stw/api_barrier",
     "stw/handler",
     "stw/leader",
-    "minor/clear",
-    "minor_finalized",
-    "minor_finalizers_oldify",
-    "minor_global_roots",
-    "minor_leave_barrier",
-    "minor_local_roots",
-    "minor_ref_tables",
-    "minor_update_weak",
-    "stw_api_barrier",
-    "stw_handler",
-    "stw_leader",
-    "major_finish_sweeping",
-    "minor_finalizers_admin"
+    "major/finished_sweeping",
+    "minor/finalizers_admin",
+    "minor/remembered_set",
+    "minor/remembered_set_promote",
+    "minor/local_roots_promote",
+    "stw/leader_barrier",
+    "stw/leader_broadcast",
+    "domain/blocking_section",
+    "plat/spin_sleep"
 };
 
 /*

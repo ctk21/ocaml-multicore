@@ -807,6 +807,7 @@ int caml_try_run_on_all_domains_with_spin_work(
   }
 
   CAML_EV_BEGIN(EV_STW_LEADER);
+  CAML_EV_BEGIN(EV_STW_LEADER_BROADCAST);
   caml_gc_log("causing STW");
 
   /* setup all fields for this stw_request, must have those needed
@@ -841,24 +842,26 @@ int caml_try_run_on_all_domains_with_spin_work(
       }
     }
 
+    Assert(domains_participating > 0);
+
+    /* setup the domain_participating fields */
+    stw_request.num_domains = domains_participating;
+    atomic_store_rel(&stw_request.num_domains_still_processing,
+                     domains_participating);
+
     /* domains now know they are part of the section */
     caml_plat_unlock(&all_domains_lock);
+    CAML_EV_END(EV_STW_LEADER_BROADCAST);
 
+    CAML_EV_BEGIN(EV_STW_LEADER_BARRIER);
     for(i = 0; i < domains_participating ; i++) {
       caml_wait_interrupt_serviced(&domain_self->interruptor, &participating[i]->internals->interruptor);
     }
   }
 
-  Assert(domains_participating > 0);
-
-  /* setup the domain_participating fields */
-  stw_request.num_domains = domains_participating;
-  atomic_store_rel(&stw_request.num_domains_still_processing,
-                   domains_participating);
-
   /* release from the enter barrier */
   atomic_store_rel(&stw_request.domains_still_running, 0);
-
+  CAML_EV_END(EV_STW_LEADER_BARRIER);
 
   #ifdef DEBUG
   domain_state->inside_stw_handler = 1;
@@ -983,6 +986,7 @@ CAMLexport void caml_bt_enter_ocaml(void)
 
   Assert(caml_domain_alone() || self->backup_thread_running);
 
+  /*CAML_EV_END(EV_BLOCKING_SECTION);*/
   if (self->backup_thread_running) {
     atomic_store_rel(&self->backup_thread_msg, BT_ENTERING_OCAML);
   }
@@ -1003,6 +1007,7 @@ CAMLexport void caml_bt_exit_ocaml(void)
 
   Assert(caml_domain_alone() || self->backup_thread_running);
 
+  /*CAML_EV_BEGIN(EV_BLOCKING_SECTION);*/
   if (self->backup_thread_running) {
     atomic_store_rel(&self->backup_thread_msg, BT_IN_BLOCKING_SECTION);
     /* Wakeup backup thread if it is sleeping */

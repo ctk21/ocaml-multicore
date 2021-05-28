@@ -5,8 +5,10 @@
 #include <unistd.h>
 #include <errno.h>
 #include <sys/time.h>
-#include "caml/platform.h"
+
 #include "caml/fail.h"
+#include "caml/platform.h"
+#include "caml/eventlog.h"
 
 /* Mutexes */
 
@@ -205,6 +207,8 @@ unsigned caml_plat_spin_wait(unsigned spins,
   if (spins < Slow_sleep_ns && Slow_sleep_ns <= next_spins) {
     caml_gc_log("Slow spin-wait loop in %s at %s:%d", function, file, line);
   }
+  CAML_EV_BEGIN(EV_SPIN_SLEEP);
   usleep(spins/1000);
+  CAML_EV_END(EV_SPIN_SLEEP);
   return next_spins;
 }
