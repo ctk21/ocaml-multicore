@@ -813,6 +813,7 @@ int caml_try_run_on_all_domains_with_spin_work(
 
   CAML_EV_BEGIN(EV_STW_LEADER);
   caml_gc_log("causing STW");
+  CAML_EV_BEGIN(EV_STW_LEADER_BROADCAST);
 
   /* setup all fields for this stw_request, must have those needed
      for domains waiting at the enter spin barrier */
@@ -849,6 +850,8 @@ int caml_try_run_on_all_domains_with_spin_work(
         domains_participating++;
       }
     }
+    CAML_EV_END(EV_STW_LEADER_BROADCAST);
+    CAML_EV_BEGIN(EV_STW_LEADER_BARRIER);
 
     for(i = 0; i < domains_participating ; i++) {
       if( participating[i] && &domain_self->state != participating[i] ) {
@@ -866,6 +869,7 @@ int caml_try_run_on_all_domains_with_spin_work(
 
   /* release from the enter barrier */
   atomic_store_rel(&stw_request.domains_still_running, 0);
+  CAML_EV_END(EV_STW_LEADER_BARRIER);
 
   #ifdef DEBUG
   domain_state->inside_stw_handler = 1;
