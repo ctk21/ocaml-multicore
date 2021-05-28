@@ -21,8 +21,8 @@ typedef unsigned int sizeclass;
 struct global_heap_state global = {0 << 8, 1 << 8, 2 << 8};
 
 typedef struct pool {
-  struct pool* next;
   value* next_obj;
+  struct pool* next;
   struct domain* owner;
   sizeclass sz;
 } pool;
@@ -207,9 +207,9 @@ static inline void pool_initialize(pool* r, sizeclass sz, struct domain* owner)
   value* p = (value*)((char*)r + POOL_HEADER_SZ);
   value* end = (value*)((char*)r + Bsize_wsize(POOL_WSIZE));
 
+  r->next_obj = 0;
   r->next = 0;
   r->owner = owner;
-  r->next_obj = 0;
   r->sz = sz;
 
   p[0] = 0;
