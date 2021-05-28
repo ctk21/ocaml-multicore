@@ -379,9 +379,10 @@ static void* large_allocate(struct caml_heap_state* local, mlsize_t sz) {
 value* caml_shared_try_alloc(struct caml_heap_state* local, mlsize_t wosize,
                              tag_t tag, int pinned)
 {
-  mlsize_t whsize = Whsize_wosize(wosize);
   value* p;
-  uintnat colour;
+  mlsize_t whsize = Whsize_wosize(wosize);
+  header_t hdr =
+    Make_header(wosize, tag, pinned ? NOT_MARKABLE : global.MARKED);
 
   Assert (wosize > 0);
   Assert (tag != Infix_tag);
@@ -399,8 +400,7 @@ value* caml_shared_try_alloc(struct caml_heap_state* local, mlsize_t wosize,
     p = large_allocate(local, Bsize_wsize(whsize));
     if (!p) return 0;
   }
-  colour = pinned ? NOT_MARKABLE : global.MARKED;
-  Hd_hp (p) = Make_header(wosize, tag, colour);
+  Hd_hp (p) = hdr;
 #ifdef DEBUG
   {
     int i;
