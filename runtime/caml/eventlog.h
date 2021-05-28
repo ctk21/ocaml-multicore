@@ -16,6 +16,8 @@
 #ifndef CAML_EVENTLOG_H
 #define CAML_EVENTLOG_H
 
+#include "config.h"
+
 typedef enum {
     EV_ENTRY,
     EV_EXIT,
