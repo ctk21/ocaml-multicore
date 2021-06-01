@@ -191,8 +191,8 @@ void caml_mem_unmap(void* mem, uintnat size)
 }
 
 #define Min_sleep_ns       10000 // 10 us
-#define Slow_sleep_ns    1000000 //  1 ms
-#define Max_sleep_ns  1000000000 //  1 s
+#define Slow_sleep_ns      10000 // 10 us
+#define Max_sleep_ns       10000 // 10 us
 
 unsigned caml_plat_spin_wait(unsigned spins,
                              const char* file, int line,
