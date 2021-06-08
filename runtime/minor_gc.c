@@ -532,35 +532,31 @@ void caml_empty_minor_heap_promote (struct domain* domain, int participating_cou
   char* young_ptr = domain_state->young_ptr;
   char* young_end = domain_state->young_end;
   uintnat minor_allocated_bytes = young_end - young_ptr;
-  uintnat prev_alloc_words;
+  uintnat prev_alloc_words = domain_state->allocated_words;
   struct oldify_state st = {0};
   value **r;
   intnat c, curr_idx;
   int remembered_roots = 0;
 
+  CAMLassert(domain == caml_domain_self());
   st.promote_domain = domain;
 
-  /* TODO: are there any optimizations we can make where we don't need to scan
-     when minor heaps can reference each other? */
-  prev_alloc_words = domain_state->allocated_words;
-
-  caml_gc_log ("Minor collection of domain %d starting", domain->state->id);
+  caml_gc_log ("Minor collection of domain %d starting", domain_state->id);
   CAML_EV_BEGIN(EV_MINOR);
 
-  if( participating[0] == caml_domain_self() ) { // TODO: We should distribute this work
+  if( participating[0] == domain ) {
     CAML_EV_BEGIN(EV_MINOR_GLOBAL_ROOTS);
     caml_scan_global_young_roots(oldify_one, &st);
     CAML_EV_END(EV_MINOR_GLOBAL_ROOTS);
   }
 
- CAML_EV_BEGIN(EV_MINOR_REMEMBERED_SET);
+  CAML_EV_BEGIN(EV_MINOR_REMEMBERED_SET);
 
   if( participating_count > 1 ) {
     int participating_idx = -1;
-    struct domain* domain_self = caml_domain_self();
 
     for( int i = 0; i < participating_count ; i++ ) {
-      if( participating[i] == domain_self ) {
+      if( participating[i] == domain ) {
         participating_idx = i;
         break;
       }
@@ -662,7 +658,7 @@ void caml_empty_minor_heap_promote (struct domain* domain, int participating_cou
 #endif
 
   CAML_EV_BEGIN(EV_MINOR_LOCAL_ROOTS);
-  caml_do_local_roots(&oldify_one, &st, domain->state->local_roots, domain->state->current_stack, domain->state->gc_regs);
+  caml_do_local_roots(&oldify_one, &st, domain_state->local_roots, domain_state->current_stack, domain_state->gc_regs);
   if (caml_scan_roots_hook != NULL) (*caml_scan_roots_hook)(&oldify_one, &st, domain);
   CAML_EV_BEGIN(EV_MINOR_LOCAL_ROOTS_PROMOTE);
   oldify_mopup (&st, 0);
@@ -685,7 +681,7 @@ void caml_empty_minor_heap_promote (struct domain* domain, int participating_cou
 
   CAML_EV_END(EV_MINOR);
   caml_gc_log ("Minor collection of domain %d completed: %2.0f%% of %u KB live",
-               domain->state->id,
+               domain_state->id,
                100.0 * (double)st.live_bytes / (double)minor_allocated_bytes,
                (unsigned)(minor_allocated_bytes + 512)/1024);
 }
@@ -716,7 +712,7 @@ static void caml_stw_empty_minor_heap_no_major_slice (struct domain* domain, voi
   CAMLassert(caml_domain_is_in_stw());
   #endif
 
-  if( participating[0] == caml_domain_self() ) {
+  if( participating[0] == domain ) {
     atomic_fetch_add(&caml_minor_cycles_started, 1);
   }
 
